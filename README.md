@@ -8,9 +8,9 @@ Group Janemba
 
 
 Grp Members:
-Jaden Charles Dacanay
-Benjiro Bahinting
-Jheremy Lobitaña
+Jaden Charles Dacanay,
+Benjiro Bahinting,
+Jheremy Lobitaña,
 Anthony Senining
 
 
