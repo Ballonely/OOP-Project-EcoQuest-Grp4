@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Eco Quest</title>
+<style>
+  :root{
+    --bg:#0d1b12; --panel:#132a1c; --panel-border:#2f5a3d; --text:#eafaf0;
+    --accent:#7be08a; --bad:#e0645a; --bio:#6fbf5a; --rec:#4aa3d8; --non:#9a9a9a; --haz:#e0b23c;
+    --gold:#e8c94a;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){ --bg:#eef7f0; --panel:#ffffff; --panel-border:#bcd9c4; --text:#132a1c; }
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  html{scroll-padding-top:env(safe-area-inset-top,0px);}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:'Courier New',monospace;
+    display:flex; flex-direction:column; align-items:center; gap:10px;
+    padding:10px; padding-top:calc(10px + env(safe-area-inset-top,0px));
+    padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));
+  }
+  h1{margin:4px 0 0 0; letter-spacing:2px; font-size:1.3rem;}
+  #hud{
+    display:flex; gap:16px; flex-wrap:wrap; justify-content:center;
+    background:var(--panel); border:2px solid var(--panel-border); border-radius:6px;
+    padding:6px 14px; font-size:.85rem; max-width:640px; width:100%;
+  }
+  #hud span b{color:var(--accent);}
+  #hud .coin b{color:var(--gold);}
+  canvas{
+    image-rendering:pixelated; image-rendering:crisp-edges;
+    border:3px solid var(--panel-border); border-radius:4px;
+    background:#1a3322; max-width:100%; height:auto;
+  }
+  #msg{min-height:1.2em; font-size:.85rem; color:var(--accent); text-align:center;}
+  #controls{
+    font-size:.75rem; opacity:.85; text-align:center; max-width:640px;
+    border:1px dashed var(--panel-border); border-radius:6px; padding:8px 12px;
+  }
+  #controls b{color:var(--accent);}
+  .hiddenUI{display:none !important;}
+  button, .pbtn{
+    font-family:inherit; background:var(--accent); color:#0d1b12; border:none;
+    border-radius:4px; padding:8px 16px; font-weight:bold; cursor:pointer; font-size:.85rem;
+  }
+  button:active, .pbtn:active{transform:translateY(1px);}
+  button:disabled, .pbtn.locked, .pbtn:disabled{ background:#555; color:#aaa; cursor:not-allowed; }
+  #overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.75); display:none;
+    align-items:center; justify-content:center; flex-direction:column; gap:10px; z-index:10;
+    padding:16px; padding-top:calc(16px + env(safe-area-inset-top,0px));
+    padding-bottom:calc(16px + env(safe-area-inset-bottom,0px));
+    overflow:auto;
+  }
+  #overlay.show{display:flex;}
+  #overlayCard{
+    background:var(--panel); border:3px solid var(--panel-border); border-radius:10px;
+    padding:20px; max-width:420px; width:100%; text-align:center;
+  }
+  #overlayTitle{color:var(--gold); margin:0 0 8px 0; letter-spacing:1px;}
+  #overlayBody{font-size:.82rem; margin-bottom:14px; text-align:left;}
+  #overlayButtons{display:flex; gap:8px; flex-wrap:wrap; justify-content:center;}
+  .level-grid, .shop-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:6px; }
+  .lvl-card, .shop-card{
+    border:2px solid var(--panel-border); border-radius:6px; padding:8px; text-align:center; font-size:.75rem;
+  }
+  .lvl-card button, .shop-card button{ width:100%; margin-top:6px; font-size:.7rem; padding:6px 4px; }
+  .stat-row{ display:flex; justify-content:space-between; font-size:.8rem; padding:2px 0; border-bottom:1px dotted var(--panel-border); }
+  .bin-key{display:inline-flex; align-items:center; gap:4px; margin:0 4px;}
+  .swatch{width:10px; height:10px; display:inline-block; border-radius:2px;}
+
+  #gameWrap{ position:relative; width:100%; max-width:640px; }
+  #gameWrap canvas{ width:100%; display:block; }
+  #menuScreen{
+    position:absolute; inset:3px; display:none; flex-direction:column; justify-content:space-between;
+    padding:8px; background:linear-gradient(rgba(0,0,0,.1),rgba(0,0,0,.35));
+  }
+  #menuScreen.show{ display:flex; }
+  .menu-topbar{ display:flex; justify-content:space-between; font-size:.55rem; }
+  .badge{ background:rgba(10,20,15,.8); border:1px solid var(--panel-border); border-radius:4px; padding:2px 6px; color:#fff; }
+  .menu-title{ text-align:center; }
+  .menu-title h2{ font-size:1.6rem; margin:0; letter-spacing:2px;
+    text-shadow:2px 0 0 #000,-2px 0 0 #000,0 2px 0 #000,0 -2px 0 #000, 3px 3px 0 rgba(0,0,0,.5); }
+  .menu-title .eco{ color:#4ee08a; } .menu-title .quest{ color:var(--gold); }
+  .menu-tag{ background:rgba(250,245,220,.95); color:#2a2a1a; text-align:center; font-size:.55rem;
+    padding:3px; border:1px solid #b89b3a; border-radius:3px; margin:4px auto 0; max-width:90%; }
+  .menu-buttons{ display:flex; flex-direction:column; gap:5px; max-width:85%; margin:0 auto; width:100%; }
+  .menu-btn{ display:flex; justify-content:space-between; align-items:center; background:rgba(15,25,35,.88);
+    border:1px solid var(--panel-border); border-radius:4px; padding:6px 9px; font-size:.62rem; color:#fff; cursor:pointer; }
+  .menu-btn:hover{ background:rgba(30,55,42,.92); }
+  .menu-btn .tag{ background:var(--accent); color:#0d1b12; font-size:.5rem; padding:2px 5px; border-radius:3px; font-weight:bold; }
+  .menu-bottom{ display:flex; justify-content:space-between; align-items:center; font-size:.5rem; gap:6px; flex-wrap:wrap; color:#fff; }
+  .clean-bar-track{ width:70px; height:7px; background:#0a1a10; border:1px solid var(--panel-border); border-radius:3px; overflow:hidden; display:inline-block; vertical-align:middle; }
+  .clean-bar-fill{ display:block; height:100%; background:linear-gradient(90deg,#4ee08a,#7be08a); }
+</style>
+</head>
+<body>
+<h1>🌍 ECO QUEST</h1>
+<div id="hud" class="hiddenUI">
+  <span>Level: <b id="lvlName">-</b></span>
+  <span>Score: <b id="score">0</b></span>
+  <span class="coin">Coins: <b id="coins">0</b></span>
+  <span>Health: <b id="health">100</b></span>
+  <span>Carrying: <b id="carrying">nothing</b></span>
+  <span>Sorted: <b id="progress">0/0</b></span>
+  <span>Cleanliness: <b id="cleanliness">100%</b></span>
+</div>
+<div id="gameWrap">
+<canvas id="game" width="320" height="180"></canvas>
+<div id="menuScreen">
+  <div class="menu-topbar">
+    <span class="badge">HI-SCORE <b id="hiscore" style="color:var(--gold)">0</b></span>
+    <span class="badge">v1.0 ARCADE</span>
+  </div>
+  <div class="menu-title">
+    <h2><span class="eco">ECO</span> <span class="quest">QUEST</span></h2>
+    <div class="menu-tag">★ SORT. CLEAN. RESTORE THE CITY. ★</div>
+  </div>
+  <div class="menu-buttons">
+    <div class="menu-btn" data-action="goto-map"><span>START GAME</span><span class="tag">READY</span></div>
+    <div class="menu-btn" data-action="goto-shop"><span>SHOP</span><span class="tag" id="shopBadge">3 ITEMS</span></div>
+    <div class="menu-btn" data-action="toggle-audio"><span>AUDIO</span><span class="tag" id="audioTag">ON</span></div>
+  </div>
+  <div class="menu-bottom">
+    <span>CLEAN: <span class="clean-bar-track"><span class="clean-bar-fill" id="cleanFill" style="width:0%"></span></span></span>
+    <span>PRESS [SPACE] OR CLICK TO START</span>
+  </div>
+</div>
+</div>
+<div id="msg" class="hiddenUI">&nbsp;</div>
+<div id="controls" class="hiddenUI">
+  <b>WASD / Arrows</b> move &nbsp; <b>E / Space</b> pick up or drop &nbsp; <b>H</b> use bin hint &nbsp;
+  <span class="bin-key"><span class="swatch" style="background:var(--bio)"></span>Bio</span>
+  <span class="bin-key"><span class="swatch" style="background:var(--rec)"></span>Rec</span>
+  <span class="bin-key"><span class="swatch" style="background:var(--non)"></span>Non-rec</span>
+  <span class="bin-key"><span class="swatch" style="background:var(--haz)"></span>Hazard</span>
+</div>
+
+<div id="overlay">
+  <div id="overlayCard">
+    <h2 id="overlayTitle">Eco Quest</h2>
+    <div id="overlayBody"></div>
+    <div id="overlayButtons"></div>
+  </div>
+</div>
+
+<script>
+// ---------- OOP core (gameplay entities — unchanged mechanics) ----------
+class Entity {
+  constructor(x, y, w, h, color){ this.x=x; this.y=y; this.w=w; this.h=h; this.color=color; }
+  get cx(){ return this.x + this.w/2; }
+  get cy(){ return this.y + this.h/2; }
+  intersects(o){ return this.x < o.x+o.w && this.x+this.w > o.x && this.y < o.y+o.h && this.y+this.h > o.y; }
+  draw(ctx){ ctx.fillStyle=this.color; ctx.fillRect(this.x, this.y, this.w, this.h); }
+}
+
+class Obstacle extends Entity {
+  constructor(x,y,w,h){ super(x,y,w,h,'#4a3a2a'); }
+  draw(ctx){
+    ctx.fillStyle='#4a3a2a'; ctx.fillRect(this.x,this.y,this.w,this.h);
+    ctx.fillStyle='#5c4a36'; ctx.fillRect(this.x+2,this.y+2,this.w-4,this.h-4);
+  }
+}
+
+const GARBAGE_COLORS = { biodegradable:'#6fbf5a', recyclable:'#4aa3d8', nonrecyclable:'#9a9a9a', hazardous:'#e0b23c' };
+const GARBAGE_LABELS = { biodegradable:'BIO', recyclable:'REC', nonrecyclable:'NON', hazardous:'HAZ' };
+
+class GarbageItem extends Entity {
+  constructor(x,y,type){ super(x,y,10,10, GARBAGE_COLORS[type]); this.type=type; this.collected=false; }
+  draw(ctx){
+    if(this.collected) return;
+    ctx.fillStyle=this.color; ctx.fillRect(this.x,this.y,this.w,this.h);
+    ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(this.x,this.y+this.h-3,this.w,3);
+  }
+}
+
+class TrashBin extends Entity {
+  constructor(x,y,type){ super(x,y,20,24, GARBAGE_COLORS[type]); this.type=type; }
+  draw(ctx, glow){
+    if(glow){ ctx.fillStyle='rgba(255,255,120,.6)'; ctx.fillRect(this.x-4,this.y-6,this.w+8,this.h+10); }
+    ctx.fillStyle='#222'; ctx.fillRect(this.x-1,this.y-1,this.w+2,this.h+2);
+    ctx.fillStyle=this.color; ctx.fillRect(this.x,this.y,this.w,this.h-4);
+    ctx.fillStyle='#111'; ctx.fillRect(this.x-2,this.y-4,this.w+4,4);
+    ctx.fillStyle='#fff'; ctx.font='6px monospace'; ctx.textAlign='center';
+    ctx.fillText(GARBAGE_LABELS[this.type], this.x+this.w/2, this.y+this.h/2+2);
+  }
+}
+
+class Player extends Entity {
+  constructor(x,y){ super(x,y,12,16,'#e8c98a'); this.baseSpeed=1.4; this.speed=1.4; this.carrying=null; this.facing='down'; }
+  move(keys, obstacles, bounds){
+    let dx=0, dy=0;
+    if(keys.has('ArrowUp')||keys.has('KeyW')) dy=-1;
+    if(keys.has('ArrowDown')||keys.has('KeyS')) dy=1;
+    if(keys.has('ArrowLeft')||keys.has('KeyA')) dx=-1;
+    if(keys.has('ArrowRight')||keys.has('KeyD')) dx=1;
+    if(dx&&dy){ dx*=0.7071; dy*=0.7071; }
+    if(dx) this.facing = dx>0?'right':'left';
+    if(dy) this.facing = dy>0?'down':'up';
+
+    const tryMove=(nx,ny)=>{
+      const test = {x:nx,y:ny,w:this.w,h:this.h};
+      for(const o of obstacles){
+        if(test.x < o.x+o.w && test.x+test.w > o.x && test.y < o.y+o.h && test.y+test.h > o.y) return false;
+      }
+      return true;
+    };
+    const nx = this.x + dx*this.speed;
+    const ny = this.y + dy*this.speed;
+    if(nx>=0 && nx+this.w<=bounds.w && tryMove(nx,this.y)) this.x=nx;
+    if(ny>=0 && ny+this.h<=bounds.h && tryMove(this.x,ny)) this.y=ny;
+  }
+  draw(ctx){
+    ctx.fillStyle='#3a2a1a'; ctx.fillRect(this.x+2,this.y+13,3,3); ctx.fillRect(this.x+7,this.y+13,3,3);
+    ctx.fillStyle='#3f6b45'; ctx.fillRect(this.x,this.y+6,this.w,8);
+    ctx.fillStyle=this.color; ctx.fillRect(this.x+2,this.y,this.w-4,7);
+    ctx.fillStyle='#2a2015'; ctx.fillRect(this.x+2,this.y,this.w-4,3);
+    if(this.carrying){
+      ctx.fillStyle=GARBAGE_COLORS[this.carrying]; ctx.fillRect(this.x+3,this.y-6,6,6);
+    }
+  }
+}
+
+class Decoration extends Entity {
+  constructor(x,y,kind){ super(x,y, kind==='tree'?14:10, kind==='tree'?18:8, '#000'); this.kind=kind; }
+  draw(ctx){
+    if(this.kind==='tree'){
+      ctx.fillStyle='#5a3a22'; ctx.fillRect(this.x+5,this.y+10,4,8);
+      ctx.fillStyle='#3f7d3f'; ctx.beginPath(); ctx.arc(this.x+7,this.y+6,9,0,7); ctx.fill();
+    } else if(this.kind==='bush'){
+      ctx.fillStyle='#4a8f4a'; ctx.fillRect(this.x,this.y+2,this.w,this.h-2);
+      ctx.fillStyle='#5fae5f'; ctx.fillRect(this.x+1,this.y,this.w-2,4);
+    } else if(this.kind==='bench'){
+      ctx.fillStyle='#6b4a2a'; ctx.fillRect(this.x,this.y+2,this.w,3);
+      ctx.fillStyle='#4a3218'; ctx.fillRect(this.x,this.y+5,2,3); ctx.fillRect(this.x+this.w-2,this.y+5,2,3);
+    } else if(this.kind==='flower'){
+      ctx.fillStyle='#e05a8a'; ctx.fillRect(this.x,this.y,3,3); ctx.fillStyle='#e8c94a'; ctx.fillRect(this.x+4,this.y+2,3,3);
+    }
+  }
+}
+
+class HazardZone extends Entity {
+  constructor(x,y,w,h){ super(x,y,w,h,'#3a5a4a'); this._cooldown=0; }
+  draw(ctx){
+    ctx.fillStyle='rgba(90,120,60,.55)'; ctx.fillRect(this.x,this.y,this.w,this.h);
+    ctx.strokeStyle='rgba(200,220,140,.5)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(this.x+this.w*0.3,this.y+this.h*0.5,3,0,7); ctx.stroke();
+    ctx.beginPath(); ctx.arc(this.x+this.w*0.7,this.y+this.h*0.4,4,0,7); ctx.stroke();
+  }
+}
+
+class Level {
+  constructor(name, obstacles, garbage, bins, decor=[], hazards=[], ground={base:'#1a3322',accent:'#234a2c'}, paths=[]){
+    this.name=name; this.obstacles=obstacles; this.garbage=garbage; this.bins=bins;
+    this.decor=decor; this.hazards=hazards; this.ground=ground; this.paths=paths;
+  }
+  get total(){ return this.garbage.length; }
+  get sorted(){ return this.garbage.filter(g=>g.collected===true).length; }
+  get complete(){ return this.sorted===this.total; }
+}
+
+function drawGround(ctx, w, h, ground, paths){
+  ctx.fillStyle=ground.base; ctx.fillRect(0,0,w,h);
+  ctx.fillStyle=ground.accent;
+  for(let y=6;y<h;y+=14){
+    for(let x=((y/14)%2===0?4:14); x<w; x+=20){ ctx.fillRect(x,y,3,3); }
+  }
+  ctx.fillStyle='rgba(120,100,70,.5)';
+  paths.forEach(p=> ctx.fillRect(p.x,p.y,p.w,p.h));
+}
+
+function makeLevel1(){
+  return new Level('Residential Street',
+    [ new Obstacle(60,40,30,10), new Obstacle(180,90,40,12), new Obstacle(20,120,18,40), new Obstacle(240,40,16,30) ],
+    [
+      new GarbageItem(30,20,'biodegradable'), new GarbageItem(90,60,'recyclable'),
+      new GarbageItem(150,30,'nonrecyclable'), new GarbageItem(250,70,'hazardous'),
+      new GarbageItem(220,140,'biodegradable'), new GarbageItem(120,150,'recyclable'),
+      new GarbageItem(45,95,'nonrecyclable'), new GarbageItem(200,20,'hazardous'),
+      new GarbageItem(270,150,'recyclable')
+    ],
+    [
+      new TrashBin(10,150,'biodegradable'), new TrashBin(60,150,'recyclable'),
+      new TrashBin(110,150,'nonrecyclable'), new TrashBin(160,150,'hazardous')
+    ],
+    [ new Decoration(2,2,'tree'), new Decoration(300,2,'tree'), new Decoration(2,150,'bush'),
+      new Decoration(190,60,'bench'), new Decoration(105,105,'flower') ],
+    [ new HazardZone(140,95,26,18) ],
+    { base:'#264d33', accent:'#2f5c3d' },
+    [ {x:0,y:78,w:320,h:12} ]
+  );
+}
+function makeLevel2(){
+  return new Level('Public Park',
+    [ new Obstacle(100,20,14,60), new Obstacle(200,60,50,14), new Obstacle(40,100,60,14) ],
+    [
+      new GarbageItem(20,30,'recyclable'), new GarbageItem(140,40,'hazardous'),
+      new GarbageItem(260,20,'biodegradable'), new GarbageItem(280,120,'nonrecyclable'),
+      new GarbageItem(160,140,'hazardous'), new GarbageItem(70,150,'recyclable'),
+      new GarbageItem(230,150,'biodegradable'), new GarbageItem(10,90,'nonrecyclable'),
+      new GarbageItem(180,10,'recyclable'), new GarbageItem(300,80,'biodegradable')
+    ],
+    [
+      new TrashBin(10,4,'biodegradable'), new TrashBin(280,4,'recyclable'),
+      new TrashBin(10,152,'nonrecyclable'), new TrashBin(280,152,'hazardous')
+    ],
+    [ new Decoration(150,150,'tree'), new Decoration(120,80,'bush'), new Decoration(250,45,'bush'),
+      new Decoration(60,60,'flower'), new Decoration(190,140,'flower'), new Decoration(30,4,'bench') ],
+    [ new HazardZone(210,95,30,20), new HazardZone(55,20,20,16) ],
+    { base:'#2d5a33', accent:'#386b3d' },
+    [ {x:120,y:0,w:12,h:180} ]
+  );
+}
+
+const UPCOMING_LEVELS = ['Market','Beach','City Center'];
+const SHOP_ITEMS = [
+  {id:'health', name:'Health Refill', cost:15, desc:'Restore 30 HP instantly.'},
+  {id:'speed', name:'Speed Boots', cost:30, desc:'Permanent +25% move speed.'},
+  {id:'hint', name:'Bin Hint (x1)', cost:10, desc:'Press H to glow the correct bin for 4s.'}
+];
+
+// ---------- Game controller ----------
+class Game {
+  constructor(canvas){
+    this.canvas=canvas; this.ctx=canvas.getContext('2d');
+    this.bounds={w:canvas.width, h:canvas.height};
+    this.keys=new Set();
+    this.resetProgress();
+    this.player=new Player(150,90);
+    this.state='menu'; this.running=false; this.msgTimer=0; this.hintTimer=0;
+    this.hiScore=0; this.audioOn=true;
+
+    window.addEventListener('keydown', e=>{
+      this.keys.add(e.code);
+      if(this.state==='menu' && e.code==='Space'){ this.handleAction('goto-map'); e.preventDefault(); return; }
+      if(this.state!=='playing') return;
+      if(e.code==='KeyE'||e.code==='Space'){ this.interact(); e.preventDefault(); }
+      if(e.code==='KeyH'){ this.useHint(); }
+    });
+    window.addEventListener('keyup', e=> this.keys.delete(e.code));
+
+    document.getElementById('overlay').addEventListener('click', e=>{
+      const btn=e.target.closest('[data-action]');
+      if(!btn) return;
+      this.handleAction(btn.dataset.action, btn.dataset.value);
+    });
+    document.getElementById('menuScreen').addEventListener('click', e=>{
+      const btn=e.target.closest('[data-action]');
+      if(!btn) return;
+      this.handleAction(btn.dataset.action, btn.dataset.value);
+    });
+
+    this.renderMenu();
+  }
+  get level(){ return this.levels[this.levelIndex]; }
+
+  resetProgress(){
+    this.levels=[makeLevel1(), makeLevel2()];
+    this.levelIndex=0; this.score=0; this.coins=0; this.health=100;
+    this.maxUnlocked=0; this.correctCount=0; this.wrongCount=0;
+    this.hintCharges=0; this.hasSpeedBoots=false;
+  }
+
+  setUI(playing){
+    document.getElementById('hud').classList.toggle('hiddenUI', !playing);
+    document.getElementById('msg').classList.toggle('hiddenUI', !playing);
+    document.getElementById('controls').classList.toggle('hiddenUI', !playing);
+  }
+  showOverlay(){ document.getElementById('menuScreen').classList.remove('show'); document.getElementById('overlay').classList.add('show'); }
+  hideOverlay(){ document.getElementById('overlay').classList.remove('show'); }
+  setCard(title, bodyHTML, buttonsHTML){
+    document.getElementById('overlayTitle').textContent=title;
+    document.getElementById('overlayBody').innerHTML=bodyHTML;
+    document.getElementById('overlayButtons').innerHTML=buttonsHTML;
+    this.showOverlay();
+  }
+
+  renderMenu(){
+    this.state='menu'; this.running=false; this.setUI(false); this.hideOverlay();
+    document.getElementById('menuScreen').classList.add('show');
+    document.getElementById('hiscore').textContent=String(this.hiScore).padStart(4,'0');
+    document.getElementById('shopBadge').textContent=SHOP_ITEMS.length+' ITEMS';
+    document.getElementById('audioTag').textContent=this.audioOn?'ON':'OFF';
+    const cleanPct=Math.round((this.maxUnlocked/this.levels.length)*100);
+    document.getElementById('cleanFill').style.width=cleanPct+'%';
+  }
+
+  renderMap(){
+    this.state='map'; this.running=false; this.setUI(false);
+    let cards='';
+    this.levels.forEach((lvl,i)=>{
+      const locked = i>this.maxUnlocked;
+      cards += `<div class="lvl-card"><b>${i+1}. ${lvl.name}</b><br>${locked?'🔒 Locked':'Ready'}
+        <button data-action="start-level" data-value="${i}" ${locked?'disabled':''}>${locked?'LOCKED':'PLAY'}</button></div>`;
+    });
+    UPCOMING_LEVELS.forEach(name=>{
+      cards += `<div class="lvl-card"><b>${name}</b><br>🚧 Coming soon<button disabled>SOON</button></div>`;
+    });
+    this.setCard('Choose a Level', `<div class="level-grid">${cards}</div>`,
+      `<button data-action="goto-menu">BACK</button>`);
+  }
+
+  renderShop(){
+    this.state='shop'; this.running=false; this.setUI(false);
+    let cards='';
+    SHOP_ITEMS.forEach(it=>{
+      let disabled = this.coins<it.cost;
+      let label='BUY';
+      if(it.id==='speed' && this.hasSpeedBoots){ disabled=true; label='OWNED'; }
+      cards += `<div class="shop-card"><b>${it.name}</b><br>${it.desc}<br>💰${it.cost}
+        <button data-action="buy-${it.id}" ${disabled?'disabled':''}>${label}</button></div>`;
+    });
+    this.setCard('Shop', `<p>Coins: <b>${this.coins}</b> — earn coins by sorting garbage correctly.</p><div class="shop-grid">${cards}</div>`,
+      `<button data-action="goto-menu">BACK</button>`);
+  }
+
+  renderStageClear(){
+    this.state='stageClear'; this.running=false; this.setUI(false);
+    if(this.score>this.hiScore) this.hiScore=this.score;
+    const isLast = this.levelIndex>=this.levels.length-1;
+    const attempts=this.correctCount+this.wrongCount;
+    const clean=attempts?Math.round(this.correctCount/attempts*100):100;
+    const stars = clean>=100?'⭐⭐⭐':clean>=70?'⭐⭐☆':'⭐☆☆';
+    const rows = `
+      <p style="text-align:center;font-size:1.1rem;">${stars}</p>
+      <div class="stat-row"><span>Cleanliness</span><b>${clean}%</b></div>
+      <div class="stat-row"><span>Correct sorts</span><b>${this.correctCount}</b></div>
+      <div class="stat-row"><span>Wrong sorts</span><b>${this.wrongCount}</b></div>
+      <div class="stat-row"><span>Coins earned</span><b>${this.levelCoins}</b></div>
+      <div class="stat-row"><span>Total score</span><b>${this.score}</b></div>`;
+    this.setCard(isLast?'City Clean! 🎉':'Stage Clear!', rows,
+      isLast? `<button data-action="goto-menu">MENU</button>` : `<button data-action="goto-map">CONTINUE</button>`);
+  }
+
+  renderGameOver(){
+    this.state='gameOver'; this.running=false; this.setUI(false);
+    if(this.score>this.hiScore) this.hiScore=this.score;
+    this.setCard('Game Over', `<p>Pollution got the better of you.<br>Final score: <b>${this.score}</b></p>`,
+      `<button data-action="reset-game">RETRY</button>`);
+  }
+
+  handleAction(action, value){
+    if(action==='goto-menu') return this.renderMenu();
+    if(action==='toggle-audio'){ this.audioOn=!this.audioOn; document.getElementById('audioTag').textContent=this.audioOn?'ON':'OFF'; return; }
+    if(action==='goto-map') return this.renderMap();
+    if(action==='goto-shop') return this.renderShop();
+    if(action==='reset-game'){ this.resetProgress(); this.player.speed=this.player.baseSpeed; this.player.x=150; this.player.y=90; return this.renderMenu(); }
+    if(action==='start-level'){
+      const idx=parseInt(value,10);
+      if(idx>this.maxUnlocked || idx>=this.levels.length) return;
+      this.levelIndex=idx; this.levels[idx]=idx===0?makeLevel1():makeLevel2();
+      this.correctCount=0; this.wrongCount=0; this.levelCoins=0;
+      this.player.x=150; this.player.y=90; this.player.carrying=null; this._holding=null;
+      this.state='playing'; this.running=true; this.setUI(true); this.hideOverlay();
+      return;
+    }
+    if(action==='buy-health'){
+      const it=SHOP_ITEMS[0]; if(this.coins>=it.cost){ this.coins-=it.cost; this.health=Math.min(100,this.health+30); this.renderShop(); }
+      return;
+    }
+    if(action==='buy-speed'){
+      const it=SHOP_ITEMS[1]; if(this.coins>=it.cost && !this.hasSpeedBoots){ this.coins-=it.cost; this.hasSpeedBoots=true; this.player.speed=this.player.baseSpeed*1.25; this.renderShop(); }
+      return;
+    }
+    if(action==='buy-hint'){
+      const it=SHOP_ITEMS[2]; if(this.coins>=it.cost){ this.coins-=it.cost; this.hintCharges++; this.renderShop(); }
+      return;
+    }
+  }
+
+  useHint(){
+    if(this.hintCharges>0 && this.player.carrying){ this.hintCharges--; this.hintTimer=240; this.flash('Hint: correct bin glowing!'); }
+  }
+
+  flash(text){ this.msgTimer=90; document.getElementById('msg').textContent=text; }
+
+  interact(){
+    const p=this.player;
+    if(!p.carrying){
+      for(const g of this.level.garbage){
+        if(!g.collected && p.intersects({x:g.x-4,y:g.y-4,w:g.w+8,h:g.h+8})){
+          p.carrying=g.type; this._holding=g; g.collected='holding'; break;
+        }
+      }
+    } else {
+      for(const bin of this.level.bins){
+        if(p.intersects({x:bin.x-4,y:bin.y-4,w:bin.w+8,h:bin.h+8})){
+          const item=this._holding;
+          if(bin.type===p.carrying){
+            item.collected=true; this.score+=10; this.coins+=5; this.levelCoins+=5; this.correctCount++;
+            this.flash('+10 score, +5 coins!');
+          } else {
+            item.collected=false; this.health=Math.max(0,this.health-10); this.wrongCount++;
+            this.flash('-10 health: wrong bin!');
+          }
+          p.carrying=null; this._holding=null; this.hintTimer=0;
+          if(this.health<=0){ this.renderGameOver(); }
+          return;
+        }
+      }
+    }
+  }
+
+  update(){
+    if(!this.running) return;
+    this.player.move(this.keys, this.level.obstacles, this.bounds);
+    if(this.msgTimer>0){ this.msgTimer--; if(this.msgTimer===0) document.getElementById('msg').textContent='\u00A0'; }
+    if(this.hintTimer>0) this.hintTimer--;
+    this.level.hazards.forEach(hz=>{
+      if(hz._cooldown>0) hz._cooldown--;
+      if(this.player.intersects(hz) && hz._cooldown<=0){
+        this.health=Math.max(0,this.health-8); hz._cooldown=90;
+        this.flash('-8 health: toxic puddle!');
+        if(this.health<=0) this.renderGameOver();
+      }
+    });
+    if(this.level.complete){
+      this.maxUnlocked=Math.max(this.maxUnlocked, this.levelIndex+1);
+      this.renderStageClear();
+    }
+  }
+
+  drawMenuScene(ctx){
+    const w=320,h=180;
+    const sky=ctx.createLinearGradient(0,0,w,0);
+    sky.addColorStop(0,'#3a4a52'); sky.addColorStop(0.5,'#6fa8c9'); sky.addColorStop(1,'#8fd0ea');
+    ctx.fillStyle=sky; ctx.fillRect(0,0,w,110);
+    const ground=ctx.createLinearGradient(0,0,w,0);
+    ground.addColorStop(0,'#3a3a3a'); ground.addColorStop(0.5,'#5a7a4a'); ground.addColorStop(1,'#5fae5f');
+    ctx.fillStyle=ground; ctx.fillRect(0,110,w,70);
+    ctx.fillStyle='#f5d76e'; ctx.beginPath(); ctx.arc(270,28,13,0,7); ctx.fill();
+    ctx.fillStyle='#333'; ctx.fillRect(14,60,42,50);
+    ctx.fillStyle='#222'; ctx.fillRect(22,20,6,42); ctx.fillRect(38,14,6,48);
+    ctx.fillStyle='rgba(130,130,130,.55)';
+    ctx.beginPath(); ctx.arc(25,14,8,0,7); ctx.arc(41,8,10,0,7); ctx.fill();
+    for(const tx of [225,255,288]){
+      ctx.strokeStyle='#eee'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(tx,110); ctx.lineTo(tx,68); ctx.stroke();
+      ctx.beginPath(); ctx.arc(tx,68,11,0,6.3); ctx.stroke();
+    }
+    ctx.fillStyle='#5a3a22'; ctx.fillRect(196,95,5,15);
+    ctx.fillStyle='#f4a6c8'; ctx.beginPath(); ctx.arc(198,90,10,0,7); ctx.fill();
+    ctx.fillStyle='#3a5a4a'; ctx.fillRect(8,150,58,26);
+    ctx.fillStyle='#8a8a3a'; ctx.fillRect(18,158,5,4); ctx.fillRect(38,163,6,4);
+    ctx.fillStyle='#4aa3d8'; ctx.beginPath(); ctx.ellipse(252,166,46,13,0,0,7); ctx.fill();
+  }
+
+  draw(){
+    const ctx=this.ctx, lvl=this.level;
+    if(this.state==='menu'){ this.drawMenuScene(ctx); return; }
+    drawGround(ctx, this.bounds.w, this.bounds.h, lvl.ground, lvl.paths);
+    lvl.hazards.forEach(hz=>hz.draw(ctx));
+    lvl.decor.forEach(d=>d.draw(ctx));
+    const glowType = (this.hintTimer>0 && this.player.carrying) ? this.player.carrying : null;
+    lvl.bins.forEach(b=>b.draw(ctx, glowType && b.type===glowType && Math.floor(this.hintTimer/10)%2===0));
+    lvl.garbage.forEach(g=>{ if(g.collected!=='holding') g.draw(ctx); });
+    lvl.obstacles.forEach(o=>o.draw(ctx));
+    this.player.draw(ctx);
+  }
+
+  loop=()=>{
+    this.update(); this.draw();
+    document.getElementById('score').textContent=this.score;
+    document.getElementById('coins').textContent=this.coins;
+    document.getElementById('health').textContent=this.health;
+    document.getElementById('lvlName').textContent=this.level.name;
+    document.getElementById('carrying').textContent=this.player.carrying||'nothing';
+    document.getElementById('progress').textContent=`${this.level.sorted}/${this.level.total}`;
+    const attempts=this.correctCount+this.wrongCount;
+    document.getElementById('cleanliness').textContent=(attempts?Math.round(this.correctCount/attempts*100):100)+'%';
+    requestAnimationFrame(this.loop);
+  }
+}
+
+const game = new Game(document.getElementById('game'));
+game.loop();
+</script>
+</body>
+</html>
