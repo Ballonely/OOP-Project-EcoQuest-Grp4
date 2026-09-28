@@ -7,7 +7,7 @@ A project for OOP that would be a game
 Group Janemba
 
 
-Grp Members:
+Group Members:
 Jaden Charles Dacanay,
 Benjiro Bahinting,
 Jheremy Lobitaña,
