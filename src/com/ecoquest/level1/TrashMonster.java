@@ -18,8 +18,9 @@ public class TrashMonster extends Entity {
     private static final int SPAWN_ROW = 1;
     private static final double IDLE_FPS = 5;
     private static final double SPAWN_FPS = 6;
-    private static final double TRASH_THROW_INTERVAL = 3;
+    private static final double TRASH_THROW_INTERVAL = 15;
     private static final double CHASE_RANGE = 120;
+    private static final double CONTACT_RANGE = 16;
     private static final double ROAM_SPEED = 24;
     private static final double CHASE_SPEED = 42;
 
@@ -169,6 +170,10 @@ public class TrashMonster extends Entity {
         int drops = garbageDropsPending;
         garbageDropsPending = 0;
         return drops;
+    }
+
+    public boolean isTouching(Player player) {
+        return Math.hypot(centerX() - player.centerX(), centerY() - player.centerY()) <= CONTACT_RANGE;
     }
 
     @Override

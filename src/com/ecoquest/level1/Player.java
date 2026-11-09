@@ -22,6 +22,8 @@ public class Player extends Entity {
     private static final int BACK_WALK_ROW = 4;
     private static final double WALK_FRAME_DURATION = 0.12;
     private static final double IDLE_FRAME_DURATION = 0.65;
+    private static final double HIT_FLASH_DURATION = 0.8;
+    private static final double HIT_FLASH_INTERVAL = 0.1;
 
     public static final int W = FRAME_SIZE, H = FRAME_SIZE;
 
@@ -30,13 +32,15 @@ public class Player extends Entity {
     private int maxHealth = 5, health = 5;
     private int money, score;
 
-    private final List<GarbageType> bag = new ArrayList<>();
+    private final List<Garbage> bag = new ArrayList<>();
     private int selected;
 
     private final BufferedImage[][] frames = new BufferedImage[FRAME_ROWS][FRAME_COLUMNS];
+    private final BufferedImage[][] redFrames = new BufferedImage[FRAME_ROWS][FRAME_COLUMNS];
     private int animationRow = FRONT_WALK_ROW;
     private double walkFrameTimer;
     private double idleFrameTimer;
+    private double hitFlashTimer;
 
     public Player(double x, double y) {
         super(x, y, W, H);
@@ -51,8 +55,25 @@ public class Player extends Entity {
             for (int column = 0; column < FRAME_COLUMNS; column++) {
                 frames[row][column] = sheet.getSubimage(
                         column * FRAME_SIZE, row * FRAME_SIZE, FRAME_SIZE, FRAME_SIZE);
+                redFrames[row][column] = tintRed(frames[row][column]);
             }
         }
+    }
+
+    private BufferedImage tintRed(BufferedImage source) {
+        BufferedImage tinted = new BufferedImage(FRAME_SIZE, FRAME_SIZE, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < FRAME_SIZE; y++) {
+            for (int x = 0; x < FRAME_SIZE; x++) {
+                int argb = source.getRGB(x, y);
+                int alpha = argb >>> 24;
+                if (alpha == 0) continue;
+                int red = Math.min(255, ((argb >>> 16) & 0xFF) + 100);
+                int green = ((argb >>> 8) & 0xFF) / 4;
+                int blue = (argb & 0xFF) / 4;
+                tinted.setRGB(x, y, (alpha << 24) | (red << 16) | (green << 8) | blue);
+            }
+        }
+        return tinted;
     }
 
     private BufferedImage loadSpriteSheet() {
@@ -84,6 +105,7 @@ public class Player extends Entity {
     }
 
     public void update(double dt, int dx, int dy, Level level) {
+        hitFlashTimer = Math.max(0, hitFlashTimer - dt);
         if (dx != 0 || dy != 0) {
             if (Math.abs(dx) > Math.abs(dy)) {
                 animationRow = dx < 0 ? LEFT_WALK_ROW : RIGHT_WALK_ROW;
@@ -111,17 +133,17 @@ public class Player extends Entity {
     public boolean bagFull()    { return bag.size() >= capacity; }
     public boolean bagEmpty()   { return bag.isEmpty(); }
     public int getCapacity()    { return capacity; }
-    public List<GarbageType> getBag() { return bag; }
+    public List<Garbage> getBag() { return bag; }
     public int getSelectedIndex() { return selected; }
 
-    public void pickUp(GarbageType t) { bag.add(t); selected = bag.size() - 1; money += 2; }
+    public void pickUp(Garbage item) { bag.add(item); selected = bag.size() - 1; money += 2; }
 
-    public GarbageType selectedItem() { return bag.isEmpty() ? null : bag.get(selected); }
+    public GarbageType selectedItem() { return bag.isEmpty() ? null : bag.get(selected).getType(); }
 
     public void cycleSelected() { if (!bag.isEmpty()) selected = (selected + 1) % bag.size(); }
 
     public GarbageType removeSelected() {
-        GarbageType t = bag.remove(selected);
+        GarbageType t = bag.remove(selected).getType();
         selected = bag.isEmpty() ? 0 : Math.min(selected, bag.size() - 1);
         return t;
     }
@@ -134,6 +156,7 @@ public class Player extends Entity {
     public void addMoney(int m) { money += m; }
     public void addScore(int s) { score = Math.max(0, score + s); }
     public void hurt(int dmg)   { health = Math.max(0, health - dmg); }
+    public void flashRed()      { hitFlashTimer = HIT_FLASH_DURATION; }
     public boolean isDead()     { return health <= 0; }
 
     // ---------- drawing ----------
@@ -141,24 +164,37 @@ public class Player extends Entity {
 
     @Override
     public void draw(Graphics2D g) {
+        BufferedImage sprite = getSpriteForCurrentState();
+        if (hitFlashTimer > 0) {
+            int frame = (int) (hitFlashTimer / HIT_FLASH_INTERVAL);
+            if (frame % 2 == 0) sprite = getRedSpriteForCurrentState();
+        }
         Graphics2D graphics = (Graphics2D) g.create();
         graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                 RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        graphics.drawImage(getSpriteForCurrentState(), (int) Math.round(x), (int) Math.round(y), null);
+        graphics.drawImage(sprite, (int) Math.round(x), (int) Math.round(y), null);
         graphics.dispose();
     }
 
     private BufferedImage getSpriteForCurrentState() {
+        return getCurrentSprite(frames);
+    }
+
+    private BufferedImage getRedSpriteForCurrentState() {
+        return getCurrentSprite(redFrames);
+    }
+
+    private BufferedImage getCurrentSprite(BufferedImage[][] spriteFrames) {
         if (walkFrameTimer > 0) {
             int frame = (int) (walkFrameTimer / WALK_FRAME_DURATION);
-            return frames[animationRow][frame];
+            return spriteFrames[animationRow][frame];
         }
 
         if (animationRow == FRONT_WALK_ROW) {
             int idleFrame = (int) (idleFrameTimer / IDLE_FRAME_DURATION);
-            return frames[IDLE_ROW][idleFrame];
+            return spriteFrames[IDLE_ROW][idleFrame];
         }
 
-        return frames[animationRow][0];
+        return spriteFrames[animationRow][0];
     }
 }

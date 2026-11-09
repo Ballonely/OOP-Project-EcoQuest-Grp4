@@ -32,6 +32,9 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
         LevelSelectManager.LevelSelectListener {
 
     private static final int HI_SCORE = 98450;
+    private static final String[] LEVEL_NAMES = {
+        "Residential", "Public Park", "Town Market", "Coastal Beach", "City Center"
+    };
 
     private Thread gameThread;
     private volatile boolean running = false;
@@ -47,6 +50,12 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
     private Player player;
     private GamePanel level1Game;
     private String currentLevelName;
+    private boolean runWon;
+    private int resultSelection;
+    private int runMoneyEarned;
+    private int runLevelBonus;
+    private int runCityHealth;
+    private String runFailureMessage = "You ran out of health!";
     private final List<Enemy> enemies = new ArrayList<>();
     private final List<Collectible> collectibles = new ArrayList<>();
     private double spawnTimer = 0;
@@ -125,7 +134,41 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
     }
 
     private void updateGameOver() {
-        if (input.isKeyJustPressed(KeyEvent.VK_SPACE)) state = GameState.MAIN_MENU;
+        int actionCount = runWon ? 3 : 2;
+        if (input.isKeyJustPressed(KeyEvent.VK_LEFT) || input.isKeyJustPressed(KeyEvent.VK_UP)) {
+            resultSelection = (resultSelection + actionCount - 1) % actionCount;
+        } else if (input.isKeyJustPressed(KeyEvent.VK_RIGHT) || input.isKeyJustPressed(KeyEvent.VK_DOWN)) {
+            resultSelection = (resultSelection + 1) % actionCount;
+        } else if (input.isKeyJustPressed(KeyEvent.VK_R)) {
+            beginNewRun(currentLevelName);
+        } else if (input.isKeyJustPressed(KeyEvent.VK_ESCAPE)) {
+            state = GameState.MAIN_MENU;
+        } else if (input.isKeyJustPressed(KeyEvent.VK_ENTER) || input.isKeyJustPressed(KeyEvent.VK_SPACE)) {
+            selectResultAction();
+        }
+    }
+
+    private void selectResultAction() {
+        if (runWon && resultSelection == 0) {
+            int currentIndex = levelIndex(currentLevelName);
+            if (currentIndex + 1 < LEVEL_NAMES.length) beginNewRun(LEVEL_NAMES[currentIndex + 1]);
+            else state = GameState.MAIN_MENU;
+            return;
+        }
+
+        int retryAction = runWon ? 1 : 0;
+        if (resultSelection == retryAction) {
+            beginNewRun(currentLevelName);
+        } else {
+            state = GameState.MAIN_MENU;
+        }
+    }
+
+    private int levelIndex(String levelName) {
+        for (int i = 0; i < LEVEL_NAMES.length; i++) {
+            if (LEVEL_NAMES[i].equals(levelName)) return i;
+        }
+        return 0;
     }
 
     private void updateGameplay(double dt) {
@@ -136,6 +179,15 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
 
         if (level1Game != null) {
             level1Game.updateFrame(dt, input);
+            if (level1Game.isFinished()) {
+                runWon = level1Game.didWin();
+                runMoneyEarned = runWon ? Math.max(0, level1Game.getMoney() - 100) : 0;
+                runLevelBonus = runWon ? 100 : 0;
+                runCityHealth = level1Game.getCityHealth();
+                runFailureMessage = level1Game.getFailureMessage();
+                resultSelection = 0;
+                state = GameState.GAME_OVER;
+            }
             return;
         }
 
@@ -162,6 +214,20 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
         }
 
         if (player.isDead()) {
+            runWon = false;
+            runMoneyEarned = 0;
+            runLevelBonus = 0;
+            runCityHealth = player.getCleanlinessLevel();
+            runFailureMessage = "You ran out of health!";
+            resultSelection = 0;
+            state = GameState.GAME_OVER;
+        } else if (player.getCleanlinessLevel() >= 100) {
+            runWon = true;
+            runMoneyEarned = 0;
+            runLevelBonus = 0;
+            runCityHealth = player.getCleanlinessLevel();
+            runFailureMessage = "";
+            resultSelection = 0;
             state = GameState.GAME_OVER;
         }
     }
@@ -174,6 +240,8 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
 
     private void beginNewRun(String levelName) {
         currentLevelName = levelName;
+        runWon = false;
+        resultSelection = 0;
         if ("Residential".equals(levelName)) {
             level1Game = new GamePanel();
             state = GameState.PLAYING;
@@ -211,9 +279,17 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
             }
             case GAME_OVER -> {
                 renderGameplay(g2);
-                uiManager.renderGameOver(g2, getWidth(), getHeight(), player.getScore());
+                int finalScore = level1Game != null ? level1Game.getScore() : player.getScore();
+                uiManager.renderOutcome(g2, getWidth(), getHeight(), runWon,
+                        displayLevelName(currentLevelName), finalScore, runMoneyEarned,
+                        runLevelBonus, runCityHealth, runFailureMessage, resultSelection);
             }
         }
+    }
+
+    private String displayLevelName(String levelName) {
+        int index = levelIndex(levelName);
+        return "Lv " + (index + 1) + ": " + (index == 0 ? "Residential Street" : levelName);
     }
 
     private void renderGameplay(Graphics2D g2) {

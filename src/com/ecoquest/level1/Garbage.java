@@ -2,6 +2,7 @@ package com.ecoquest.level1;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.geom.AffineTransform;
 
 /** A piece of litter lying on the ground. Each category has two little sprites (variants). */
 public class Garbage extends Entity {
@@ -18,6 +19,27 @@ public class Garbage extends Entity {
     }
 
     public GarbageType getType() { return type; }
+    public String getItemName() {
+        switch (type) {
+            case BIODEGRADABLE: return variant == 0 ? "banana peel" : "apple core";
+            case RECYCLABLE: return variant == 0 ? "can" : "bottle";
+            case NON_RECYCLABLE: return variant == 0 ? "wrapper" : "chip bag";
+            case HAZARDOUS: return variant == 0 ? "battery" : "toxic drum";
+            default: throw new IllegalStateException("Unsupported garbage type: " + type);
+        }
+    }
+
+    public void drawIcon(Graphics2D g, int iconX, int iconY, int iconSize) {
+        double scale = iconSize / (double) SIZE;
+        Graphics2D iconGraphics = (Graphics2D) g.create();
+        AffineTransform transform = new AffineTransform();
+        transform.translate(iconX - x * scale, iconY - y * scale);
+        transform.scale(scale, scale);
+        iconGraphics.transform(transform);
+        draw(iconGraphics);
+        iconGraphics.dispose();
+    }
+
     public void setHighlighted(boolean h) { this.highlighted = h; }
 
     @Override

@@ -22,6 +22,8 @@ public class GamePanel {
     private TrashBin nearBin;
 
     private boolean cleared;
+    private boolean gameOver;
+    private double bossDamageCooldown;
     private String toast = "";
     private double toastTime;
 
@@ -29,11 +31,22 @@ public class GamePanel {
         startLevel();
     }
 
+    public boolean isFinished() { return cleared || gameOver; }
+    public boolean didWin() { return cleared; }
+    public int getScore() { return player.getScore(); }
+    public int getMoney() { return player.getMoney(); }
+    public int getCityHealth() { return level.cleanliness(); }
+    public String getFailureMessage() {
+        return level.cleanliness() <= 0 ? "City health reached zero!" : "You ran out of health!";
+    }
+
     private void startLevel() {
         level = new Level1Residential().load();
         player = new Player(level.getSpawnX(), level.getSpawnY());
         trashMonster = null;
+        bossDamageCooldown = 0;
         cleared = false;
+        gameOver = false;
         showToast("Clean the street! Sort litter into the matching bins.", 4);
     }
 
@@ -44,7 +57,8 @@ public class GamePanel {
             startLevel();
             return;
         }
-        if (cleared) return;
+        if (cleared || gameOver) return;
+        bossDamageCooldown = Math.max(0, bossDamageCooldown - dt);
 
         int dx = (isDown(input, KeyEvent.VK_D, KeyEvent.VK_RIGHT) ? 1 : 0)
                 - (isDown(input, KeyEvent.VK_A, KeyEvent.VK_LEFT) ? 1 : 0);
@@ -75,6 +89,24 @@ public class GamePanel {
                 }
                 showToast("The Trash Monster dumped more litter!", 2);
             }
+
+            if (trashMonster.isTouching(player) && bossDamageCooldown <= 0) {
+                player.hurt(1);
+                player.flashRed();
+                bossDamageCooldown = 3;
+                showToast("The Trash Monster hit you! -1 life", 2);
+                if (player.isDead()) {
+                    gameOver = true;
+                    showToast("Player health depleted!", 3);
+                    return;
+                }
+            }
+        }
+
+        if (level.cleanliness() <= 0) {
+            gameOver = true;
+            showToast("City health depleted!", 3);
+            return;
         }
 
         if (level.garbageLeft() == 0 && player.bagEmpty()) {
@@ -86,9 +118,10 @@ public class GamePanel {
 
     private void pickUp(Garbage g) {
         if (player.bagFull()) { showToast("Bag is full! Empty it in a bin.", 2); return; }
-        player.pickUp(g.getType());
+        g.setHighlighted(false);
+        player.pickUp(g);
         level.removeGarbage(g);
-        showToast("Picked up " + g.getType().getLabel().toLowerCase() + " +\u20B12", 1.5);
+        showToast("Picked up " + g.getItemName() + " +\u20B12", 1.5);
     }
 
     private void throwInBin(TrashBin bin) {
@@ -105,7 +138,10 @@ public class GamePanel {
             player.hurt(1);
             level.dropGarbage(item, player.centerX(), player.centerY());
             showToast("Wrong bin! " + item.getLabel() + " goes elsewhere.  -1 HP", 2);
-            if (player.isDead()) { startLevel(); showToast("Out of health - level restarted.", 3); }
+            if (player.isDead()) {
+                gameOver = true;
+                showToast("Player health depleted!", 3);
+            }
         }
     }
 
@@ -148,24 +184,31 @@ public class GamePanel {
         g.setFont(new Font(Font.DIALOG, Font.BOLD, 15));
 
         // top-left stats
-        panel(g, 12, 12, 270, 112);
+        String title = "ECO QUEST - " + level.getName();
+        FontMetrics statsMetrics = g.getFontMetrics();
+        int statsPanelWidth = Math.max(270, statsMetrics.stringWidth(title) + 24);
+        statsPanelWidth = Math.min(statsPanelWidth, W - 206);
+        panel(g, 12, 12, statsPanelWidth, 112);
         g.setColor(Color.WHITE);
-        g.drawString("ECO QUEST - " + level.getName(), 24, 34);
+        g.drawString(title, 24, 34);
         g.setColor(new Color(255, 214, 90));
         g.drawString("\u20B1 " + player.getMoney(), 24, 56);
         g.setColor(Color.WHITE);
-        g.drawString("Score " + player.getScore(), 120, 56);
+        g.drawString("Score " + player.getScore(), 130, 56);
         for (int i = 0; i < player.getMaxHealth(); i++) {
             g.setColor(i < player.getHealth() ? new Color(230, 60, 70) : new Color(90, 90, 95));
-            g.drawString("\u2665", 24 + i * 20, 80);
+            g.setFont(new Font(Font.DIALOG, Font.BOLD, 20));
+            g.drawString("\u2665", 24 + i * 24, 82);
         }
+        g.setFont(new Font(Font.DIALOG, Font.BOLD, 15));
         int pct = level.cleanliness();
         g.setColor(Color.WHITE);
         g.drawString("City Health " + pct + "%", 24, 100);
         g.setColor(new Color(60, 60, 65));
-        g.fillRect(24, 106, 240, 9);
+        int healthBarWidth = statsPanelWidth - 36;
+        g.fillRect(24, 106, healthBarWidth, 9);
         g.setColor(pct < 50 ? new Color(220, 150, 50) : new Color(80, 200, 90));
-        g.fillRect(24, 106, 240 * pct / 100, 9);
+        g.fillRect(24, 106, healthBarWidth * pct / 100, 9);
 
         // top-right garbage counter
         panel(g, W - 182, 12, 170, 36);
@@ -179,12 +222,10 @@ public class GamePanel {
         g.drawString("BAG  (Q = switch item)", 24, H - 56);
         for (int i = 0; i < player.getCapacity(); i++) {
             int sx = 24 + i * 36, sy = H - 48;
-            g.setColor(new Color(50, 55, 60));
+            Garbage item = i < player.getBag().size() ? player.getBag().get(i) : null;
+            g.setColor(item == null ? new Color(50, 55, 60) : new Color(item.getType().getColor()));
             g.fillRect(sx, sy, 30, 26);
-            if (i < player.getBag().size()) {
-                g.setColor(new Color(player.getBag().get(i).getColor()));
-                g.fillRect(sx + 3, sy + 3, 24, 20);
-            }
+            if (item != null) item.drawIcon(g, sx + 6, sy + 4, 18);
             if (i == player.getSelectedIndex() && !player.bagEmpty()) {
                 g.setColor(Color.WHITE);
                 g.drawRect(sx - 1, sy - 1, 31, 27);
@@ -199,23 +240,13 @@ public class GamePanel {
         // context hint
         String hint = null;
         if (nearBin != null && !player.bagEmpty())
-            hint = "E: throw " + player.selectedItem().getLabel() + " into the " + nearBin.getType().getLabel() + " bin";
-        else if (nearGarbage != null) hint = "E: pick up " + nearGarbage.getType().getLabel();
+            hint = "E: Throw " + player.getBag().get(player.getSelectedIndex()).getItemName()
+                    + " in the " + nearBin.getType().getLabel() + " bin";
+        else if (nearGarbage != null) hint = "E: pick up " + nearGarbage.getItemName();
         if (hint != null) centered(g, hint, W, H - 96, 15);
 
         if (toastTime > 0) centered(g, toast, W, 70, 16);
 
-        if (cleared) {
-            g.setColor(new Color(0, 0, 0, 150));
-            g.fillRect(0, 0, W, H);
-            g.setColor(Color.WHITE);
-            g.setFont(new Font(Font.DIALOG, Font.BOLD, 34));
-            String s = "Residential Street Cleaned!";
-            g.drawString(s, (W - g.getFontMetrics().stringWidth(s)) / 2, H / 2 - 20);
-            g.setFont(new Font(Font.DIALOG, Font.PLAIN, 18));
-            String s2 = "Next: Boss Challenge - the Trash Monster   (R to replay)";
-            g.drawString(s2, (W - g.getFontMetrics().stringWidth(s2)) / 2, H / 2 + 20);
-        }
     }
 
     private void centered(Graphics2D g, String text, int width, int y, int size) {

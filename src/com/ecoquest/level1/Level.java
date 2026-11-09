@@ -17,17 +17,18 @@ import static com.ecoquest.level1.Config.*;
  */
 public abstract class Level {
     public static final int BASE_CLEANLINESS = 30;   // city starts at 30%
+    private static final int CITY_HEALTH_LOSS_PER_BOSS_TRASH = 2;
 
     protected final TileType[][] tiles = new TileType[ROWS][COLS];
     protected final List<Prop> props = new ArrayList<>();
     protected final List<Garbage> garbage = new ArrayList<>();
     protected final List<TrashBin> bins = new ArrayList<>();
     private final List<Entity> npcs = new ArrayList<>();
-    protected final Random rng = new Random(7);        // fixed seed -> same litter every run
+    protected final Random rng = new Random();
     protected int spawnCol, spawnRow;
 
     private BufferedImage ground;
-    private int totalGarbage, sortedCorrect;
+    private int totalGarbage, sortedCorrect, bossPollution;
 
     // ----- what each level must provide -----
     public abstract String getName();
@@ -160,6 +161,7 @@ public abstract class Level {
 
     /** The Trash Monster drops new litter near its position. */
     public void dropGarbageFromBoss(double x, double y) {
+        bossPollution += CITY_HEALTH_LOSS_PER_BOSS_TRASH;
         double gx = Math.max(0, Math.min(WORLD_W - Garbage.SIZE,
                 x - Garbage.SIZE / 2.0 + rng.nextInt(25) - 12));
         double gy = Math.max(0, Math.min(WORLD_H - Garbage.SIZE,
@@ -171,9 +173,9 @@ public abstract class Level {
 
     /** City cleanliness in percent: starts at 30, reaches 100 when everything is sorted. */
     public int cleanliness() {
-        if (totalGarbage == 0) return 100;
+        if (totalGarbage == 0) return Math.max(0, 100 - bossPollution);
         int progress = (int) Math.round((100 - BASE_CLEANLINESS) * (double) sortedCorrect / totalGarbage);
-        return Math.min(100, BASE_CLEANLINESS + progress);
+        return Math.max(0, Math.min(100, BASE_CLEANLINESS + progress - bossPollution));
     }
 
     public int garbageLeft()       { return garbage.size(); }
