@@ -4,7 +4,9 @@ import com.ecoquest.entities.Collectible;
 import com.ecoquest.entities.Enemy;
 import com.ecoquest.entities.GameObject;
 import com.ecoquest.entities.Player;
+import com.ecoquest.level1.GamePanel;
 import com.ecoquest.ui.MenuManager;
+import com.ecoquest.ui.LevelSelectManager;
 import com.ecoquest.ui.UIManager;
 import com.ecoquest.util.Constants;
 
@@ -26,7 +28,8 @@ import java.util.Random;
  * between menu / playing / paused / game-over states. update() and
  * render() are fully decoupled passes.
  */
-public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
+public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
+        LevelSelectManager.LevelSelectListener {
 
     private static final int HI_SCORE = 98450;
 
@@ -36,11 +39,14 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
     private final InputHandler input = new InputHandler();
     private final UIManager uiManager = new UIManager();
     private final MenuManager menuManager;
+    private final LevelSelectManager levelSelectManager;
     private final Random rng = new Random();
 
     private GameState state = GameState.MAIN_MENU;
 
     private Player player;
+    private GamePanel level1Game;
+    private String currentLevelName;
     private final List<Enemy> enemies = new ArrayList<>();
     private final List<Collectible> collectibles = new ArrayList<>();
     private double spawnTimer = 0;
@@ -53,6 +59,7 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
         addMouseListener(input);
         addMouseMotionListener(input);
         menuManager = new MenuManager(this, HI_SCORE);
+        levelSelectManager = new LevelSelectManager(this);
     }
 
     /** Starts the dedicated game-loop thread. Safe to call once. */
@@ -104,6 +111,7 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
     private void update(double dt) {
         switch (state) {
             case MAIN_MENU -> menuManager.handleInput(input, getWidth());
+            case LEVEL_SELECT -> levelSelectManager.handleInput(input, getWidth(), getHeight());
             case PLAYING -> updateGameplay(dt);
             case PAUSED -> updatePaused();
             case GAME_OVER -> updateGameOver();
@@ -123,6 +131,11 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
     private void updateGameplay(double dt) {
         if (input.isKeyJustPressed(KeyEvent.VK_P)) {
             state = GameState.PAUSED;
+            return;
+        }
+
+        if (level1Game != null) {
+            level1Game.updateFrame(dt, input);
             return;
         }
 
@@ -159,7 +172,15 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
         collectibles.add(new Collectible(x, y));
     }
 
-    private void beginNewRun() {
+    private void beginNewRun(String levelName) {
+        currentLevelName = levelName;
+        if ("Residential".equals(levelName)) {
+            level1Game = new GamePanel();
+            state = GameState.PLAYING;
+            return;
+        }
+
+        level1Game = null;
         player = new Player(getWidth() / 2.0, getHeight() / 2.0, input, getWidth(), getHeight());
         enemies.clear();
         collectibles.clear();
@@ -182,6 +203,7 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
 
         switch (state) {
             case MAIN_MENU -> menuManager.render(g2, getWidth(), getHeight());
+            case LEVEL_SELECT -> levelSelectManager.render(g2, getWidth(), getHeight());
             case PLAYING -> renderGameplay(g2);
             case PAUSED -> {
                 renderGameplay(g2);
@@ -195,6 +217,11 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
     }
 
     private void renderGameplay(Graphics2D g2) {
+        if (level1Game != null) {
+            level1Game.renderFrame(g2, getWidth(), getHeight());
+            return;
+        }
+
         g2.setPaint(new GradientPaint(0, 0, Constants.COLOR_SKY_BLUE, 0, getHeight(), new Color(120, 200, 120)));
         g2.fillRect(0, 0, getWidth(), getHeight());
 
@@ -204,14 +231,20 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener {
         for (GameObject obj : renderables) obj.render(g2);
         player.render(g2);
 
-        uiManager.renderHud(g2, player, getWidth());
+        uiManager.renderHud(g2, player, getWidth(), currentLevelName);
     }
 
     // ------------------------------------------------------------------
     // MenuManager.MenuListener callbacks
     // ------------------------------------------------------------------
     @Override
-    public void onStartGame() { beginNewRun(); }
+    public void onStartGame() { state = GameState.LEVEL_SELECT; }
+
+    @Override
+    public void onBackToMenu() { state = GameState.MAIN_MENU; }
+
+    @Override
+    public void onStartLevel(String levelName) { beginNewRun(levelName); }
 
     @Override
     public void onOpenShop() {

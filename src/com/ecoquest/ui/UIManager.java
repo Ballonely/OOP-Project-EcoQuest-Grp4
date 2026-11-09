@@ -14,7 +14,7 @@ import java.awt.Graphics2D;
  */
 public class UIManager {
 
-    public void renderHud(Graphics2D g, Player player, int panelWidth) {
+    public void renderHud(Graphics2D g, Player player, int panelWidth, String levelName) {
         // Score panel (top-left)
         drawPanel(g, 20, 16, 200, 36);
         g.setFont(Constants.FONT_HUD);
@@ -22,6 +22,12 @@ public class UIManager {
         g.drawString("SCORE", 34, 40);
         g.setColor(Color.WHITE);
         g.drawString(String.valueOf(player.getScore()), 120, 40);
+
+        g.setFont(Constants.FONT_SMALL);
+        g.setColor(Constants.COLOR_TEXT_LIGHT);
+        String levelLabel = "AREA: " + levelName;
+        int levelLabelWidth = g.getFontMetrics().stringWidth(levelLabel);
+        g.drawString(levelLabel, (panelWidth - levelLabelWidth) / 2, 40);
 
         // Health bar (top-right)
         int barW = 220;

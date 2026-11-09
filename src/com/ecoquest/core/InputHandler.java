@@ -5,6 +5,7 @@ import java.awt.event.KeyListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionListener;
+import java.awt.Point;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -18,10 +19,12 @@ public class InputHandler extends MouseAdapter implements KeyListener, MouseMoti
     private final Set<Integer> pressedKeys = new HashSet<>();
     private final Set<Integer> justPressedKeys = new HashSet<>();
 
-    private int mouseX;
-    private int mouseY;
+    private volatile int mouseX;
+    private volatile int mouseY;
+    private int clickX;
+    private int clickY;
     private boolean mouseClicked;
-    private boolean mousePressed;
+    private volatile boolean mousePressed;
 
     @Override
     public void keyPressed(KeyEvent e) {
@@ -55,7 +58,11 @@ public class InputHandler extends MouseAdapter implements KeyListener, MouseMoti
     }
 
     @Override
-    public void mousePressed(MouseEvent e) {
+    public synchronized void mousePressed(MouseEvent e) {
+        mouseX = e.getX();
+        mouseY = e.getY();
+        clickX = e.getX();
+        clickY = e.getY();
         mousePressed = true;
         mouseClicked = true;
     }
@@ -77,11 +84,16 @@ public class InputHandler extends MouseAdapter implements KeyListener, MouseMoti
     /** Must be called once per update tick, after all systems have polled input. */
     public void endFrame() {
         justPressedKeys.clear();
+    }
+
+    /** Returns and consumes the next mouse click, retaining its original coordinates. */
+    public synchronized Point consumeMouseClick() {
+        if (!mouseClicked) return null;
         mouseClicked = false;
+        return new Point(clickX, clickY);
     }
 
     public int getMouseX() { return mouseX; }
     public int getMouseY() { return mouseY; }
-    public boolean isMouseClicked() { return mouseClicked; }
     public boolean isMousePressed() { return mousePressed; }
 }

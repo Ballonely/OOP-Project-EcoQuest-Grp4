@@ -8,6 +8,7 @@ import java.awt.Color;
 import java.awt.FontMetrics;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
+import java.awt.Point;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -106,10 +107,11 @@ public class MenuManager {
         if (input.isKeyJustPressed(KeyEvent.VK_SPACE) || input.isKeyJustPressed(KeyEvent.VK_ENTER)) {
             activate(selectedIndex);
         }
-        if (input.isMouseClicked()) {
+        Point click = input.consumeMouseClick();
+        if (click != null) {
             int startX = (panelWidth - BTN_WIDTH) / 2;
-            int mx = input.getMouseX();
-            int my = input.getMouseY();
+            int mx = click.x;
+            int my = click.y;
             for (int i = 0; i < items.size(); i++) {
                 int by = MENU_START_Y + i * (BTN_HEIGHT + BTN_GAP);
                 if (mx >= startX && mx <= startX + BTN_WIDTH && my >= by && my <= by + BTN_HEIGHT) {
