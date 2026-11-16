@@ -18,7 +18,7 @@ if errorlevel 1 (
 REM Compile on every launch so changes to existing source files are applied
 echo Compiling EcoQuest...
 if not exist "bin" mkdir bin
-javac -d bin src\com\ecoquest\Main.java src\com\ecoquest\core\*.java src\com\ecoquest\entities\*.java src\com\ecoquest\level1\*.java src\com\ecoquest\ui\*.java src\com\ecoquest\util\*.java
+javac -d bin src\com\ecoquest\Main.java src\com\ecoquest\core\*.java src\com\ecoquest\data\*.java src\com\ecoquest\entities\*.java src\com\ecoquest\level1\*.java src\com\ecoquest\ui\*.java src\com\ecoquest\util\*.java
 if errorlevel 1 (
     echo Compilation failed.
     pause

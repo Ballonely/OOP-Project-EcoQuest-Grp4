@@ -54,7 +54,7 @@ public class MenuManager {
 
     private final List<MenuItem> items = new ArrayList<>();
     private final MenuListener listener;
-    private final int hiScore;
+    private int hiScore;
     private int selectedIndex = 0;
     private BufferedImage backgroundImage;
 
@@ -66,6 +66,10 @@ public class MenuManager {
         items.add(new MenuItem("SHOP", "3 NEW", Constants.COLOR_GOLD));
         items.add(new MenuItem("SETTINGS & AUDIO", null, null));
         items.add(new MenuItem("QUIT TO DESKTOP", null, null));
+    }
+
+    public void setHiScore(int score) {
+        hiScore = Math.max(0, score);
     }
 
     private void loadBackgroundImage() {

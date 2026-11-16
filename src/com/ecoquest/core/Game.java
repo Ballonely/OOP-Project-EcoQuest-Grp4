@@ -4,13 +4,18 @@ import com.ecoquest.entities.Collectible;
 import com.ecoquest.entities.Enemy;
 import com.ecoquest.entities.GameObject;
 import com.ecoquest.entities.Player;
+import com.ecoquest.data.UserDatabase;
+import com.ecoquest.data.UserDatabase.Account;
 import com.ecoquest.level1.GamePanel;
 import com.ecoquest.ui.MenuManager;
 import com.ecoquest.ui.LevelSelectManager;
+import com.ecoquest.ui.ShopManager;
 import com.ecoquest.ui.UIManager;
 import com.ecoquest.util.Constants;
 
 import javax.swing.JPanel;
+import javax.swing.JOptionPane;
+import javax.swing.SwingUtilities;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.GradientPaint;
@@ -18,6 +23,7 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.event.KeyEvent;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -29,9 +35,8 @@ import java.util.Random;
  * render() are fully decoupled passes.
  */
 public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
-        LevelSelectManager.LevelSelectListener {
+        LevelSelectManager.LevelSelectListener, ShopManager.ShopListener {
 
-    private static final int HI_SCORE = 98450;
     private static final String[] LEVEL_NAMES = {
         "Residential", "Public Park", "Town Market", "Coastal Beach", "City Center"
     };
@@ -43,7 +48,10 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
     private final UIManager uiManager = new UIManager();
     private final MenuManager menuManager;
     private final LevelSelectManager levelSelectManager;
+    private final ShopManager shopManager;
     private final Random rng = new Random();
+    private final UserDatabase database;
+    private Account account;
 
     private GameState state = GameState.MAIN_MENU;
 
@@ -60,15 +68,19 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
     private final List<Collectible> collectibles = new ArrayList<>();
     private double spawnTimer = 0;
 
-    public Game() {
+    public Game(UserDatabase database, Account account) {
+        this.database = database;
+        this.account = account;
         setPreferredSize(new Dimension(Constants.WINDOW_WIDTH, Constants.WINDOW_HEIGHT));
         setBackground(Constants.COLOR_BG_DARK);
         setFocusable(true);
         addKeyListener(input);
         addMouseListener(input);
         addMouseMotionListener(input);
-        menuManager = new MenuManager(this, HI_SCORE);
+        menuManager = new MenuManager(this, account.getScore());
         levelSelectManager = new LevelSelectManager(this);
+        shopManager = new ShopManager(this);
+        shopManager.setMoney(account.getMoney());
     }
 
     /** Starts the dedicated game-loop thread. Safe to call once. */
@@ -121,6 +133,7 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
         switch (state) {
             case MAIN_MENU -> menuManager.handleInput(input, getWidth());
             case LEVEL_SELECT -> levelSelectManager.handleInput(input, getWidth(), getHeight());
+            case SHOP -> shopManager.handleInput(input, getWidth(), getHeight());
             case PLAYING -> updateGameplay(dt);
             case PAUSED -> updatePaused();
             case GAME_OVER -> updateGameOver();
@@ -180,6 +193,8 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
         if (level1Game != null) {
             level1Game.updateFrame(dt, input);
             if (level1Game.isFinished()) {
+                shopManager.setMoney(level1Game.getMoney());
+                persistCompletedRun(level1Game.getScore(), level1Game.getMoney());
                 runWon = level1Game.didWin();
                 runMoneyEarned = runWon ? Math.max(0, level1Game.getMoney() - 100) : 0;
                 runLevelBonus = runWon ? 100 : 0;
@@ -214,6 +229,7 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
         }
 
         if (player.isDead()) {
+            persistCompletedRun(player.getScore(), shopManager.getMoney());
             runWon = false;
             runMoneyEarned = 0;
             runLevelBonus = 0;
@@ -222,6 +238,7 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
             resultSelection = 0;
             state = GameState.GAME_OVER;
         } else if (player.getCleanlinessLevel() >= 100) {
+            persistCompletedRun(player.getScore(), shopManager.getMoney());
             runWon = true;
             runMoneyEarned = 0;
             runLevelBonus = 0;
@@ -229,6 +246,31 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
             runFailureMessage = "";
             resultSelection = 0;
             state = GameState.GAME_OVER;
+        }
+    }
+
+    private void persistCompletedRun(int scoreEarned, int money) {
+        try {
+            account = database.updateProgress(account.getUsername(), scoreEarned, money);
+            menuManager.setHiScore(account.getScore());
+        } catch (IOException e) {
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                    "Your run could not be saved. Check that the EcoQuest account file is writable.\n"
+                            + e.getMessage(),
+                    "Save Error", JOptionPane.ERROR_MESSAGE));
+        }
+    }
+
+    private boolean persistBalance(int money) {
+        try {
+            account = database.updateBalance(account.getUsername(), money);
+            return true;
+        } catch (IOException e) {
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                    "The purchase was cancelled because your balance could not be saved.\n"
+                            + e.getMessage(),
+                    "Save Error", JOptionPane.ERROR_MESSAGE));
+            return false;
         }
     }
 
@@ -243,7 +285,8 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
         runWon = false;
         resultSelection = 0;
         if ("Residential".equals(levelName)) {
-            level1Game = new GamePanel();
+            level1Game = new GamePanel(shopManager.getMoney(), shopManager.getCapacityBonus(),
+                    shopManager.hasRunningShoes(), shopManager.hasGloves(), shopManager);
             state = GameState.PLAYING;
             return;
         }
@@ -272,6 +315,7 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
         switch (state) {
             case MAIN_MENU -> menuManager.render(g2, getWidth(), getHeight());
             case LEVEL_SELECT -> levelSelectManager.render(g2, getWidth(), getHeight());
+            case SHOP -> shopManager.render(g2, getWidth(), getHeight());
             case PLAYING -> renderGameplay(g2);
             case PAUSED -> {
                 renderGameplay(g2);
@@ -320,12 +364,14 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
     public void onBackToMenu() { state = GameState.MAIN_MENU; }
 
     @Override
+    public boolean onMoneyChanged(int money) { return persistBalance(money); }
+
+    @Override
     public void onStartLevel(String levelName) { beginNewRun(levelName); }
 
     @Override
     public void onOpenShop() {
-        // Placeholder hook: extend with a ShopManager + ui.ShopScreen following
-        // the same isolation pattern as MenuManager/UIManager.
+        state = GameState.SHOP;
     }
 
     @Override

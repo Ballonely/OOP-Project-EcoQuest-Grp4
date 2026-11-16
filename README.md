@@ -62,16 +62,26 @@ run.bat
 Or from the command line:
 ```bash
 mkdir -p bin
-javac -d bin src/com/ecoquest/Main.java src/com/ecoquest/core/*.java src/com/ecoquest/entities/*.java src/com/ecoquest/level1/*.java src/com/ecoquest/ui/*.java src/com/ecoquest/util/*.java
+javac -d bin src/com/ecoquest/Main.java src/com/ecoquest/core/*.java src/com/ecoquest/data/*.java src/com/ecoquest/entities/*.java src/com/ecoquest/level1/*.java src/com/ecoquest/ui/*.java src/com/ecoquest/util/*.java
 java -cp bin com.ecoquest.Main
 ```
 
+### Accounts and saved progress
+
+EcoQuest prompts you to log in or register when it starts. Usernames must be
+3-24 letters, numbers, or underscores; passwords must be 8-128 characters.
+Accounts are stored locally in `.ecoquest/accounts.db` under your home folder.
+Passwords are saved as salted PBKDF2 hashes, and each account's cumulative
+score and shop balance are saved between runs. This local account file is not
+shared or synchronized between computers.
+
 ### Controls
 - **Move:** Arrow keys or WASD
-- **Level 1:** E picks up nearby litter or sorts the selected item into a nearby bin; Q cycles the bag; R restarts
+- **Level 1:** E picks up nearby litter or sorts the selected item into a nearby bin; Q cycles the bag; H uses a purchased healing potion; R restarts
 - **Menu navigate:** Up/Down, or mouse hover + click
 - **Select / Start:** Space or Enter
 - **Level selection:** Left/Right or Up/Down, then Space/Enter to start; Esc returns to the menu
+- **Shop:** Left/Right or Up/Down to browse the catalog; click a card to select it; Esc or Back to Menu returns
 - **Pause / Resume:** P
 - **Back to menu (from Pause):** Esc
 - **Return to menu (from Game Over):** Space
@@ -97,5 +107,6 @@ com.ecoquest
      ├─ MenuManager.java       Main menu screen (title, tagline, buttons,
      │                         top/bottom HUD strips) — matches reference art
      ├─ LevelSelectManager.java Level selection screen and stage navigation
+     ├─ ShopManager.java       Shop catalog UI and navigation
      └─ UIManager.java         In-game HUD, Pause overlay, Game Over overlay
 ```

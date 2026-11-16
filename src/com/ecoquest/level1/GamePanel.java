@@ -1,6 +1,7 @@
 package com.ecoquest.level1;
 
 import com.ecoquest.core.InputHandler;
+import com.ecoquest.ui.ShopManager;
 
 import java.awt.*;
 import java.awt.event.KeyEvent;
@@ -10,7 +11,7 @@ import static com.ecoquest.level1.Config.*;
 
 /** Level 1 world, interaction rules and HUD, driven by the main game loop. */
 public class GamePanel {
-    private static final double PICKUP_RANGE = 13, BIN_RANGE = 17;
+    private static final double BIN_RANGE = 17;
     private static final int BOSS_SPAWN_CITY_HEALTH = 75;
 
     private final BufferedImage frame = new BufferedImage(WORLD_W, WORLD_H, BufferedImage.TYPE_INT_ARGB);
@@ -26,8 +27,23 @@ public class GamePanel {
     private double bossDamageCooldown;
     private String toast = "";
     private double toastTime;
+    private final int startingMoney;
+    private final int capacityBonus;
+    private final boolean runningShoes;
+    private final boolean scanningGloves;
+    private final ShopManager shopManager;
 
     public GamePanel() {
+        this(0, 0, false, false, null);
+    }
+
+    public GamePanel(int startingMoney, int capacityBonus, boolean runningShoes,
+            boolean scanningGloves, ShopManager shopManager) {
+        this.startingMoney = Math.max(0, startingMoney);
+        this.capacityBonus = Math.max(0, capacityBonus);
+        this.runningShoes = runningShoes;
+        this.scanningGloves = scanningGloves;
+        this.shopManager = shopManager;
         startLevel();
     }
 
@@ -41,8 +57,13 @@ public class GamePanel {
     }
 
     private void startLevel() {
+        int carriedMoney = player == null ? startingMoney : player.getMoney();
         level = new Level1Residential().load();
         player = new Player(level.getSpawnX(), level.getSpawnY());
+        player.setMoney(carriedMoney);
+        player.addCapacity(capacityBonus);
+        if (runningShoes) player.increaseSpeed(1.25);
+        if (scanningGloves) player.setPickupRange(21);
         trashMonster = null;
         bossDamageCooldown = 0;
         cleared = false;
@@ -66,7 +87,7 @@ public class GamePanel {
                 - (isDown(input, KeyEvent.VK_W, KeyEvent.VK_UP) ? 1 : 0);
         player.update(dt, dx, dy, level);
 
-        nearGarbage = level.nearestGarbage(player.centerX(), player.centerY(), PICKUP_RANGE);
+        nearGarbage = level.nearestGarbage(player.centerX(), player.centerY(), player.getPickupRange());
         nearBin = level.nearestBin(player.centerX(), player.centerY(), BIN_RANGE);
         for (Garbage g : level.getGarbage()) g.setHighlighted(g == nearGarbage);
         for (TrashBin b : level.getBins()) b.setHighlighted(b == nearBin && !player.bagEmpty());
@@ -74,6 +95,7 @@ public class GamePanel {
         if (input.isKeyJustPressed(KeyEvent.VK_Q) || input.isKeyJustPressed(KeyEvent.VK_TAB)) {
             player.cycleSelected();
         }
+        if (input.isKeyJustPressed(KeyEvent.VK_H)) useHealingPotion();
 
         if (input.isKeyJustPressed(KeyEvent.VK_E) || input.isKeyJustPressed(KeyEvent.VK_SPACE)) {
             if (nearBin != null && !player.bagEmpty()) throwInBin(nearBin);
@@ -122,6 +144,17 @@ public class GamePanel {
         player.pickUp(g);
         level.removeGarbage(g);
         showToast("Picked up " + g.getItemName() + " +\u20B12", 1.5);
+    }
+
+    private void useHealingPotion() {
+        if (player.getHealth() >= player.getMaxHealth()) {
+            showToast("Health is already full.", 1.5);
+        } else if (shopManager == null || !shopManager.consumePotion()) {
+            showToast("No healing potions available. Buy one in the shop.", 2);
+        } else {
+            player.heal(1);
+            showToast("Used a healing potion. +1 heart", 1.5);
+        }
     }
 
     private void throwInBin(TrashBin bin) {

@@ -4,6 +4,7 @@ package com.ecoquest.core;
 public enum GameState {
     MAIN_MENU,
     LEVEL_SELECT,
+    SHOP,
     PLAYING,
     PAUSED,
     GAME_OVER

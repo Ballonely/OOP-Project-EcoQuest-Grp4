@@ -27,8 +27,9 @@ public class Player extends Entity {
 
     public static final int W = FRAME_SIZE, H = FRAME_SIZE;
 
-    private double speed = 62;                 // pixels / second (upgradeable later)
-    private int capacity = 5;                  // bag size       (upgradeable later)
+    private double speed = 62;
+    private int capacity = 5;
+    private double pickupRange = 13;
     private int maxHealth = 5, health = 5;
     private int money, score;
 
@@ -133,10 +134,14 @@ public class Player extends Entity {
     public boolean bagFull()    { return bag.size() >= capacity; }
     public boolean bagEmpty()   { return bag.isEmpty(); }
     public int getCapacity()    { return capacity; }
+    public double getPickupRange() { return pickupRange; }
     public List<Garbage> getBag() { return bag; }
     public int getSelectedIndex() { return selected; }
 
     public void pickUp(Garbage item) { bag.add(item); selected = bag.size() - 1; money += 2; }
+    public void addCapacity(int amount) { capacity += Math.max(0, amount); }
+    public void increaseSpeed(double multiplier) { speed *= multiplier; }
+    public void setPickupRange(double range) { pickupRange = Math.max(pickupRange, range); }
 
     public GarbageType selectedItem() { return bag.isEmpty() ? null : bag.get(selected).getType(); }
 
@@ -154,8 +159,14 @@ public class Player extends Entity {
     public int getHealth()    { return health; }
     public int getMaxHealth() { return maxHealth; }
     public void addMoney(int m) { money += m; }
+    public void setMoney(int amount) { money = Math.max(0, amount); }
     public void addScore(int s) { score = Math.max(0, score + s); }
     public void hurt(int dmg)   { health = Math.max(0, health - dmg); }
+    public boolean heal(int amount) {
+        if (amount <= 0 || health >= maxHealth) return false;
+        health = Math.min(maxHealth, health + amount);
+        return true;
+    }
     public void flashRed()      { hitFlashTimer = HIT_FLASH_DURATION; }
     public boolean isDead()     { return health <= 0; }
 
