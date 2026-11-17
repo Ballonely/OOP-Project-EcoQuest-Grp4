@@ -1,0 +1,14 @@
+ECO QUEST - Level 3 (Market)
+
+Needs: JDK 17 or newer (check with: javac -version)
+
+WINDOWS:   double-click run.bat   (or in a terminal inside this folder: .\run.bat)
+MAC/LINUX: ./run.sh
+
+VS CODE:   File > Open Folder > pick THIS folder (the one with src, data, run.bat)
+           Open src/ecoquest/Main.java and click "Run" above main,
+           or press F5 (uses .vscode/launch.json).
+           Do not use the top-right Code Runner button.
+
+Controls: WASD/arrows move, E/Space pick up + drop, P pause, R restart, Enter start.
+See README.md for how to add a trash base for other maps.

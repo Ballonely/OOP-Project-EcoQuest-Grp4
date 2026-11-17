@@ -1,0 +1,43 @@
+# Eco Quest | Level 3 (Market) trash base
+# Format: id,name,type,weight,tip
+#   id     -> sprite key. Optional art: assets/sprites/<id>.png (any size, drawn at ~14x14 px)
+#   type   -> BIO | REC | TRASH | HAZ
+#   weight -> relative spawn chance (higher = more common on this map)
+#   tip    -> short lesson shown when the player sorts it wrongly
+#
+# Why these items: a wet/dry market study in Muar, Malaysia found ~38.5% chicken and
+# fish waste, ~25% vegetable and fruit waste, ~36% inorganic waste (plastics, packaging).
+# So BIO items get the highest weights, then packaging (REC / TRASH), and HAZ is rare.
+
+# ---- BIO (fish, meat, vegetable, fruit and food scraps) ----
+fish_bone,Fish Bones,BIO,7,Fish waste rots fast. Compost it in the green bin.
+fish_head,Fish Head,BIO,7,Fish scraps are organic and break down naturally.
+meat_scraps,Meat Scraps,BIO,5,Raw meat scraps are biodegradable food waste.
+apple_core,Apple Core,BIO,5,Fruit scraps make good compost.
+banana_peel,Banana Peel,BIO,5,Peels break down quickly in compost.
+cabbage_leaf,Cabbage Leaves,BIO,6,Vegetable trimmings are biodegradable.
+rotten_tomato,Rotten Tomato,BIO,4,Spoiled produce is still compostable.
+egg_shell,Egg Shells,BIO,3,Egg shells are biodegradable.
+bread_crust,Stale Bread,BIO,3,Bread is food waste. It belongs with the BIO items.
+
+# ---- REC (clean packaging that can be reprocessed) ----
+plastic_bottle,Plastic Bottle,REC,6,PET bottles are recyclable. Empty them first.
+tin_can,Tin Can,REC,4,Metal cans can be melted and reused.
+glass_bottle,Glass Bottle,REC,4,Glass is recyclable again and again.
+glass_jar,Glass Jar,REC,3,Glass jars are recyclable.
+cardboard,Cardboard Box,REC,5,Flattened cardboard is recyclable.
+newspaper,Old Newspaper,REC,3,Clean paper is recyclable.
+
+# ---- TRASH (non-recyclable, residual waste) ----
+plastic_bag,Sando Bag,TRASH,6,Thin plastic bags are usually not accepted for recycling.
+styro_tray,Styrofoam Tray,TRASH,5,Styrofoam is non-recyclable.
+sachet,Snack Sachet,TRASH,5,Multi-layer sachets cannot be recycled.
+straw,Plastic Straw,TRASH,3,Straws are too small and light to recycle.
+cig_butt,Cigarette Butt,TRASH,2,Cigarette filters are plastic and not recyclable.
+tissue,Used Tissue,TRASH,3,Soiled tissue cannot be recycled.
+
+# ---- HAZ (toxic or dangerous, rare but worth more money) ----
+battery,Used Battery,HAZ,2,Batteries leak toxic metals. Hazardous waste only.
+bulb,Broken Bulb,HAZ,2,Bulbs have glass shards and sometimes mercury.
+spray_can,Spray Can,HAZ,2,Pressurized cans can explode and hold chemicals.
+lighter,Gas Lighter,HAZ,1,Lighters hold flammable gas.
