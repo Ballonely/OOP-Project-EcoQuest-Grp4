@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Launch EcoQuest",
+      "request": "launch",
+      "mainClass": "com.ecoquest.Main",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

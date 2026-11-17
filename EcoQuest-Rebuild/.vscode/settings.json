@@ -1,0 +1,6 @@
+{
+  "java.project.sourcePaths": ["src"],
+  "java.project.outputPath": "bin",
+  "java.configuration.updateBuildConfiguration": "automatic",
+  "files.encoding": "utf8"
+}
