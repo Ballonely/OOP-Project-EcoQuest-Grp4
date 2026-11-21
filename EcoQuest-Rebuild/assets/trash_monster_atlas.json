@@ -1,0 +1,122 @@
+{
+ "frame_size": [
+  32,
+  32
+ ],
+ "sheet_size": [
+  128,
+  96
+ ],
+ "frames": {
+  "idle_0": [
+   0,
+   0,
+   32,
+   32
+  ],
+  "idle_1": [
+   32,
+   0,
+   32,
+   32
+  ],
+  "idle_2": [
+   64,
+   0,
+   32,
+   32
+  ],
+  "idle_3": [
+   96,
+   0,
+   32,
+   32
+  ],
+  "spawn_0": [
+   0,
+   32,
+   32,
+   32
+  ],
+  "spawn_1": [
+   32,
+   32,
+   32,
+   32
+  ],
+  "spawn_2": [
+   64,
+   32,
+   32,
+   32
+  ],
+  "spawn_3": [
+   96,
+   32,
+   32,
+   32
+  ],
+  "hurt": [
+   0,
+   64,
+   32,
+   32
+  ],
+  "defeat_0": [
+   32,
+   64,
+   32,
+   32
+  ],
+  "defeat_1": [
+   64,
+   64,
+   32,
+   32
+  ],
+  "defeat_2": [
+   96,
+   64,
+   32,
+   32
+  ]
+ },
+ "animations": {
+  "idle": {
+   "frames": [
+    "idle_0",
+    "idle_1",
+    "idle_2",
+    "idle_3"
+   ],
+   "fps": 5,
+   "loop": true
+  },
+  "spawn_garbage": {
+   "frames": [
+    "spawn_0",
+    "spawn_1",
+    "spawn_2",
+    "spawn_3"
+   ],
+   "fps": 6,
+   "loop": false,
+   "note": "emit garbage on spawn_2"
+  },
+  "hurt": {
+   "frames": [
+    "hurt"
+   ],
+   "fps": 1
+  },
+  "defeated": {
+   "frames": [
+    "defeat_0",
+    "defeat_1",
+    "defeat_2"
+   ],
+   "fps": 4,
+   "loop": false
+  }
+ }
+}
