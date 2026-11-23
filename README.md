@@ -16,7 +16,7 @@ Anthony Senining
 
 Eco Quest 
 
-Eco Quest  is an educational game where players take on the role of a city cleaner whose goal is to reduce pollution and keep the city clean. Players explore different areas, collect scattered garbage, and properly sort waste into categories such as recyclable, biodegradable, and non-biodegradable. As the player cleans more areas, the city's cleanliness and environmental score improve. The game aims to promote proper waste disposal, recycling, and environmental awareness while providing an interactive and enjoyable gaming experience.
+Eco Quest  is an educational game where players take on the role of a city cleaner whose goal is to reduce pollution and keep the city clean. Players explore different areas, collect scattered garbage, and properly sort waste into categories such as recyclable, biodegradable, non-biodegradable, and hazardous. As the player cleans more areas, the city's cleanliness and environmental score improve. Each level has a boss that the player needs to defeat.The game aims to promote proper waste disposal, recycling, and environmental awareness while providing an interactive and enjoyable gaming experience.
 
 
 Basic Gameplay
