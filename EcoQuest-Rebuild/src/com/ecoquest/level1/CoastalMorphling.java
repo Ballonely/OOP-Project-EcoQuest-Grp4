@@ -7,6 +7,7 @@ import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.util.List;
 
 final class CoastalMorphling {
     private final BufferedImage sprite;
@@ -19,15 +20,20 @@ final class CoastalMorphling {
     }
 
     void draw(Graphics2D g, double time) {
+        draw(g, time, 0, List.of());
+    }
+
+    void draw(Graphics2D g, double time, double attackTime, List<double[]> targets) {
         int x = (int) Math.round(x(time)), y = (int) Math.round(y(time));
-        drawTideBurst(g, time, x + 36, y + 42);
+        drawTideBurst(g, time, x + 40, y + 55);
         g.setColor(new Color(25, 108, 112, 120));
-        g.fillOval(x - 4, y + 47, 78, 16);
+        g.fillOval(x - 7, y + 61, 94, 18);
         if (sprite == null) return;
         Graphics2D copy = (Graphics2D) g.create();
         copy.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        copy.drawImage(sprite, x, y, 72, 58, null);
+        copy.drawImage(sprite, x, y, 80, 72, null);
         copy.dispose();
+        if (attackTime > 0 && !targets.isEmpty()) drawLaunchedWater(g, x + 42, y + 17, attackTime, targets);
     }
 
     void drawEntrance(Graphics2D g, double time, double progress) {
@@ -35,7 +41,7 @@ final class CoastalMorphling {
         double rise = p * p * (3 - 2 * p);
         int x = (int) Math.round(x(time)), baseY = (int) Math.round(y(time));
         int spriteY = baseY + (int) Math.round((1 - rise) * 38);
-        int cx = x + 36, waterY = baseY + 49;
+        int cx = x + 40, waterY = baseY + 62;
         drawEntranceSplash(g, time, p, cx, waterY);
         g.setColor(new Color(25, 108, 112, (int) (120 * rise)));
         g.fillOval(x - 4, waterY - 2, 78, 18);
@@ -44,16 +50,31 @@ final class CoastalMorphling {
         Graphics2D copy = (Graphics2D) g.create();
         copy.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         copy.setComposite(AlphaComposite.SrcOver.derive((float) Math.min(1, 0.25 + rise * 0.9)));
-        copy.drawImage(sprite, x, spriteY, 72, 58, null);
+        copy.drawImage(sprite, x, spriteY, 80, 72, null);
+        copy.dispose();
+    }
+
+    void drawDefeated(Graphics2D g, double time, double progress) {
+        double p = Math.max(0, Math.min(1, progress));
+        int x = (int) Math.round(x(time)), y = (int) Math.round(y(time) + p * 45);
+        int cx = x + 40, waterY = y + 62;
+        drawEntranceSplash(g, time * 1.8, 1 - p, cx, waterY);
+        g.setColor(new Color(25, 108, 112, (int) (120 * (1 - p))));
+        g.fillOval(x - 7, waterY - 2, 94, 18);
+        if (sprite == null || p >= 0.95) return;
+        Graphics2D copy = (Graphics2D) g.create();
+        copy.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+        copy.setComposite(AlphaComposite.SrcOver.derive((float) (1 - p)));
+        copy.drawImage(sprite, x, y, 80, 72, null);
         copy.dispose();
     }
 
     boolean touches(double px, double py, double time, double radius) {
-        return Math.hypot(px - (x(time) + 36), py - (y(time) + 30)) <= radius;
+        return Math.hypot(px - (x(time) + 40), py - (y(time) + 36)) <= radius;
     }
 
-    double x(double time) { return 410 + Math.sin(time * 0.42) * 7; }
-    double y(double time) { return 126 + Math.sin(time * 0.56) * 4; }
+    double x(double time) { return 224 + Math.sin(time * 0.28) * 5; }
+    double y(double time) { return 94 + Math.sin(time * 0.36) * 3; }
 
     private void drawTideBurst(Graphics2D g, double time, int cx, int cy) {
         for (int i = 0; i < 4; i++) {
@@ -70,6 +91,31 @@ final class CoastalMorphling {
             int py = cy + (int) (Math.sin(angle) * distance * 0.5);
             g.setColor(i % 2 == 0 ? new Color(157, 240, 226, 210) : new Color(71, 192, 192, 220));
             g.fillRect(px, py, 2, 2);
+        }
+    }
+
+    private void drawLaunchedWater(Graphics2D g, int startX, int startY, double attackTime,
+                                   List<double[]> targets) {
+        double progress = Math.max(0, Math.min(1, 1 - attackTime / WaterImpact.WARNING_SECONDS));
+        g.setColor(new Color(129, 239, 228, (int) (150 * (1 - progress * 0.35))));
+        g.fillOval(startX - 9, startY - 7, 18, 15);
+        int count = Math.min(8, targets.size());
+        for (int i = 0; i < count; i++) {
+            double local = Math.max(0, Math.min(1, progress * 1.24 - i * 0.035));
+            if (progress * 1.24 < i * 0.035) continue;
+            double[] target = targets.get(i);
+            double px = startX + (target[0] - startX) * local;
+            double py = startY + (target[1] - startY) * local - Math.sin(local * Math.PI) * 42;
+            int size = 3 + (int) (2 * Math.sin(local * Math.PI));
+            g.setColor(new Color(122, 231, 221, 100));
+            g.drawLine(startX, startY, (int) px, (int) py);
+            g.setColor(i % 2 == 0 ? new Color(202, 255, 241, 235) : new Color(93, 202, 199, 240));
+            g.fillOval((int) px - size / 2, (int) py - size / 2, size, size);
+            if (local > 0.8) {
+                int alpha = (int) (190 * (1 - local));
+                g.setColor(new Color(202, 255, 241, Math.max(0, alpha)));
+                g.fillOval((int) target[0] - 4, (int) target[1] - 4, 8, 8);
+            }
         }
     }
 

@@ -40,9 +40,11 @@ public class Player extends Entity {
     private boolean onBoat;
     private double boatHeading, boatSpeed;
     private double slowTimer;
+    private double stunTimer, mudTimer;
 
     private final BufferedImage[][] frames = new BufferedImage[FRAME_ROWS][FRAME_COLUMNS];
     private final BufferedImage[][] redFrames = new BufferedImage[FRAME_ROWS][FRAME_COLUMNS];
+    private final BufferedImage[][] mudFrames = new BufferedImage[FRAME_ROWS][FRAME_COLUMNS];
     private int animationRow = FRONT_WALK_ROW;
     private double walkFrameTimer;
     private double idleFrameTimer;
@@ -62,6 +64,7 @@ public class Player extends Entity {
                 frames[row][column] = sheet.getSubimage(
                         column * FRAME_SIZE, row * FRAME_SIZE, FRAME_SIZE, FRAME_SIZE);
                 redFrames[row][column] = tintRed(frames[row][column]);
+                mudFrames[row][column] = tintMud(frames[row][column]);
             }
         }
     }
@@ -76,6 +79,21 @@ public class Player extends Entity {
                 int red = Math.min(255, ((argb >>> 16) & 0xFF) + 100);
                 int green = ((argb >>> 8) & 0xFF) / 4;
                 int blue = (argb & 0xFF) / 4;
+                tinted.setRGB(x, y, (alpha << 24) | (red << 16) | (green << 8) | blue);
+            }
+        }
+        return tinted;
+    }
+
+    private BufferedImage tintMud(BufferedImage source) {
+        BufferedImage tinted = new BufferedImage(FRAME_SIZE, FRAME_SIZE, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < FRAME_SIZE; y++) {
+            for (int x = 0; x < FRAME_SIZE; x++) {
+                int argb = source.getRGB(x, y), alpha = argb >>> 24;
+                if (alpha == 0) continue;
+                int red = (int) (((argb >>> 16) & 0xFF) * 0.42 + 112 * 0.58);
+                int green = (int) (((argb >>> 8) & 0xFF) * 0.42 + 68 * 0.58);
+                int blue = (int) ((argb & 0xFF) * 0.42 + 35 * 0.58);
                 tinted.setRGB(x, y, (alpha << 24) | (red << 16) | (green << 8) | blue);
             }
         }
@@ -111,8 +129,13 @@ public class Player extends Entity {
     }
 
     public void update(double dt, int dx, int dy, Level level) {
-        slowTimer = Math.max(0, slowTimer - dt);
+        advanceEffects(dt);
         hitFlashTimer = Math.max(0, hitFlashTimer - dt);
+        if (stunTimer > 0) {
+            walkFrameTimer = 0;
+            idleFrameTimer = (idleFrameTimer + dt) % (IDLE_FRAME_DURATION * 2);
+            return;
+        }
         if (dx != 0 || dy != 0) {
             if (Math.abs(dx) > Math.abs(dy)) {
                 animationRow = dx < 0 ? LEFT_WALK_ROW : RIGHT_WALK_ROW;
@@ -144,7 +167,13 @@ public class Player extends Entity {
     public boolean isOnBoat() { return onBoat; }
 
     public void updateBoat(double dt, int throttle, int turn, Level level) {
-        slowTimer = Math.max(0, slowTimer - dt);
+        advanceEffects(dt);
+        if (stunTimer > 0) {
+            boatSpeed = 0;
+            walkFrameTimer = 0;
+            idleFrameTimer = (idleFrameTimer + dt) % (IDLE_FRAME_DURATION * 2);
+            return;
+        }
         boatHeading += turn * (0.48 + 0.9 * Math.min(1, Math.abs(boatSpeed) / 52.0)) * dt;
         if (throttle > 0) boatSpeed = Math.min(52 * movementFactor(), boatSpeed + 34 * movementFactor() * dt);
         else if (throttle < 0) boatSpeed = Math.max(-18 * movementFactor(), boatSpeed - 25 * movementFactor() * dt);
@@ -167,7 +196,19 @@ public class Player extends Entity {
     }
 
     public void applySlow(double seconds) { slowTimer = Math.max(slowTimer, seconds); }
+    public void applySewageSplash() {
+        stunTimer = Math.max(stunTimer, 0.72);
+        slowTimer = Math.max(slowTimer, 3.0);
+        mudTimer = Math.max(mudTimer, 3.0);
+        boatSpeed = 0;
+    }
     public double getSlowTimer() { return slowTimer; }
+    public boolean isStunned() { return stunTimer > 0; }
+    private void advanceEffects(double dt) {
+        slowTimer = Math.max(0, slowTimer - dt);
+        stunTimer = Math.max(0, stunTimer - dt);
+        mudTimer = Math.max(0, mudTimer - dt);
+    }
     private double movementFactor() { return slowTimer > 0 ? 0.55 : 1.0; }
 
     // ---------- bag ----------
@@ -227,6 +268,7 @@ public class Player extends Entity {
     public void draw(Graphics2D g) {
         if (onBoat) drawBoat(g);
         BufferedImage sprite = getSpriteForCurrentState();
+        if (mudTimer > 0) sprite = getCurrentSprite(mudFrames);
         if (hitFlashTimer > 0) {
             int frame = (int) (hitFlashTimer / HIT_FLASH_INTERVAL);
             if (frame % 2 == 0) sprite = getRedSpriteForCurrentState();

@@ -20,60 +20,78 @@ public final class MarketLevel extends Level {
     private final java.util.List<Stall> stalls = new java.util.ArrayList<>();
     private final java.util.List<int[]> trees = new java.util.ArrayList<>();
 
-    // 32 x 18 tiles of 16 px. A corridor comes in from the top and opens into one big plaza (the blue outline in the
-    // layout sketch). A 1-tile sidewalk runs around the road, and the stalls stand outside it.
-    private static final Rectangle PLAZA = new Rectangle(112, 80, 288, 128);
-    private static final Rectangle CORRIDOR = new Rectangle(208, 0, 112, 80);
-    private static final Rectangle FOUNTAIN = new Rectangle(258, 234, 28, 26);
+    // 50 x 28 tiles of 16 px: a much bigger world than before, with small stalls (like the beach map: big map, small
+    // buildings). A corridor comes in from the top and opens into one big plaza (the blue outline in the layout
+    // sketch). A 1-tile sidewalk runs around the road, and the stalls stand outside it.
+    private static final Rectangle PLAZA = new Rectangle(128, 80, 544, 240);
+    private static final Rectangle CORRIDOR = new Rectangle(352, 0, 96, 80);
+    private static final Rectangle FOUNTAIN = new Rectangle(386, 352, 28, 26);
+    private static final int SW = 44, SH = 40; // stall footprint
 
     public MarketLevel() {
-        super(MapId.MARKET, "Waste King", new Config(40, 5, 300, 26, 14, 5, 7.0, 30));
+        super(MapId.MARKET, "Waste King", new Config(40, 5, 360, 34, 14, 3, 5.0, 40));
 
-        // six stalls around the plaza, the same 4x4-tile footprint as the houses in the Residential level
-        addStall(new Rectangle(120, 4, 64, 60), 0x2e8b3a, 0xe8f0e0, Goods.VEG, "Vegetables");
-        addStall(new Rectangle(340, 4, 64, 60), 0xd8d8d8, 0xe67e22, Goods.FRUIT, "Fruits");
-        addStall(new Rectangle(28, 112, 64, 60), 0xd8d8d8, 0xe08a9a, Goods.PORK, "Pork");
-        addStall(new Rectangle(420, 112, 64, 60), 0x7a1f2b, 0xe8e0d0, Goods.BEEF, "Beef");
-        addStall(new Rectangle(146, 228, 80, 60), 0xf0c53a, 0xd8d8d8, Goods.POULTRY, "Poultry");
-        addStall(new Rectangle(332, 228, 64, 60), 0x2f67b8, 0xe8f0e0, Goods.FISH, "Fish");
+        // sixteen small stalls around the plaza: top row, both sides, bottom row
+        int[][] pos = {
+                {160, 14}, {224, 14}, {288, 14}, {468, 14}, {532, 14}, {596, 14},
+                {56, 100}, {56, 190}, {700, 100}, {700, 190},
+                {136, 348}, {208, 348}, {280, 348}, {476, 348}, {548, 348}, {620, 348}};
+        Goods[] kinds = {
+                Goods.VEG, Goods.FRUIT, Goods.POULTRY, Goods.PORK, Goods.BEEF, Goods.FISH,
+                Goods.PORK, Goods.VEG, Goods.BEEF, Goods.FRUIT,
+                Goods.FISH, Goods.POULTRY, Goods.FRUIT, Goods.VEG, Goods.PORK, Goods.POULTRY};
+        // indexed by Goods.ordinal(): VEG, FRUIT, PORK, BEEF, POULTRY, FISH
+        String[] names = {"Vegetables", "Fruits", "Pork", "Beef", "Poultry", "Fish"};
+        int[][] awn = {{0x2e8b3a, 0xe8f0e0}, {0xd8d8d8, 0xe67e22}, {0xd8d8d8, 0xe08a9a},
+                {0x7a1f2b, 0xe8e0d0}, {0xf0c53a, 0xd8d8d8}, {0x2f67b8, 0xe8f0e0}};
+        for (int i = 0; i < pos.length; i++) {
+            int k = kinds[i].ordinal();
+            addStall(new Rectangle(pos[i][0], pos[i][1], SW, SH), awn[k][0], awn[k][1], kinds[i], names[k]);
+        }
 
         solids.add(FOUNTAIN);
 
         // trees: x, y, radius
-        for (int[] t : new int[][]{{16, 28, 11}, {64, 52, 10}, {470, 52, 10}, {498, 28, 11},
-                {16, 268, 11}, {80, 262, 10}, {440, 262, 10}, {498, 268, 11}}) {
+        for (int[] t : new int[][]{{26, 30, 11}, {70, 62, 10}, {774, 30, 11}, {730, 62, 10},
+                {26, 420, 11}, {84, 400, 10}, {774, 420, 11}, {716, 400, 10}, {28, 160, 10}, {772, 160, 10},
+                {28, 300, 10}, {772, 300, 10}}) {
             trees.add(t);
             solids.add(new Rectangle(t[0] - t[2] / 2, t[1], t[2], t[2] + 3));
         }
-        // crates and barrels beside the stalls
-        solids.add(new Rectangle(104, 40, 8, 8));
-        solids.add(new Rectangle(414, 66, 8, 10));
-        solids.add(new Rectangle(404, 236, 8, 8));
+        // crates and barrels beside the side stalls
+        solids.add(new Rectangle(46, 150, 8, 8));
+        solids.add(new Rectangle(46, 240, 8, 10));
+        solids.add(new Rectangle(752, 150, 8, 8));
+        solids.add(new Rectangle(752, 240, 8, 10));
 
-        // four small bins in a row on the south sidewalk, between the two south stalls (BIO, REC, TRASH, HAZ)
-        int bx = 242;
+        // four small bins in a row on the south sidewalk, above the fountain (BIO, REC, TRASH, HAZ)
+        int bx = 368;
         for (WasteType t : WasteType.values()) {
-            bins.put(t, new Rectangle(bx, 210, 12, 14));
+            bins.put(t, new Rectangle(bx, 322, 12, 14));
             bx += 16;
         }
 
-        start = new Point(180, 170);
-        pile = new Point(300, 140);
+        start = new Point(230, 160);
+        pile = new Point(540, 196);
 
         // moving hand carts: they bump you and make you drop what you carry
-        carts.add(new Lane(128, 384, 112, 40));
-        carts.add(new Lane(128, 384, 194, 52));
+        carts.add(new Lane(140, 660, 116, 44));
+        carts.add(new Lane(140, 660, 298, 56));
+        carts.add(new Lane(140, 400, 210, 36));
 
-        puddles.add(new Rectangle(160, 130, 14, 7));
-        puddles.add(new Rectangle(340, 160, 14, 7));
-        puddles.add(new Rectangle(250, 30, 14, 7));
-        puddles.add(new Rectangle(220, 180, 14, 7));
+        puddles.add(new Rectangle(190, 140, 14, 7));
+        puddles.add(new Rectangle(330, 256, 14, 7));
+        puddles.add(new Rectangle(470, 130, 14, 7));
+        puddles.add(new Rectangle(600, 270, 14, 7));
+        puddles.add(new Rectangle(380, 30, 14, 7));
+        puddles.add(new Rectangle(250, 190, 14, 7));
+        puddles.add(new Rectangle(600, 150, 14, 7));
     }
 
     private void addStall(Rectangle box, int a, int b, Goods goods, String label) {
         stalls.add(new Stall(box, new Color(a), new Color(b), goods));
-        solids.add(new Rectangle(box.x, box.y + 12, box.width, box.height - 12));
-        if (label != null) labels.add(new Label(label, new Rectangle(box.x, box.y + 2, box.width, 18)));
+        solids.add(new Rectangle(box.x, box.y + 10, box.width, box.height - 10));
+        if (label != null) labels.add(new Label(label, new Rectangle(box.x, box.y, box.width, 14)));
     }
 
     @Override
@@ -83,8 +101,8 @@ public final class MarketLevel extends Level {
                 "Boss: the Waste King",
                 "",
                 "Vendors toss fish scraps, peels and packaging all day.",
-                "Every correct sort fills the Market Stage Completion Bar. Finish before time runs out.",
-                "Every wrong bin costs a heart and feeds the Waste King more trash.",
+                "Every correct bin raises City Health. Reach 100% to defeat him before time runs out.",
+                "Every wrong bin costs a heart, lowers City Health and feeds him more trash.",
                 "Careful: hand carts bump you and make you drop what you carry."
         };
     }
@@ -98,10 +116,14 @@ public final class MarketLevel extends Level {
     public BufferedImage paintBackground() {
         BufferedImage img = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
         Tiles.brick(img, new Rectangle(0, 0, W, H), new Color(0xa6523a), new Color(0x6e3226));
-        Tiles.grass(img, new Rectangle(0, 0, 40, 46));
-        Tiles.grass(img, new Rectangle(480, 0, 32, 46));
-        Tiles.grass(img, new Rectangle(0, 254, 40, 34));
-        Tiles.grass(img, new Rectangle(480, 254, 32, 34));
+        Tiles.grass(img, new Rectangle(0, 0, 52, 78));
+        Tiles.grass(img, new Rectangle(748, 0, 52, 78));
+        Tiles.grass(img, new Rectangle(0, 372, 112, 76));
+        Tiles.grass(img, new Rectangle(688, 372, 112, 76));
+        Tiles.grass(img, new Rectangle(0, 140, 40, 40));
+        Tiles.grass(img, new Rectangle(760, 140, 40, 40));
+        Tiles.grass(img, new Rectangle(0, 284, 40, 40));
+        Tiles.grass(img, new Rectangle(760, 284, 40, 40));
         Graphics2D sg = img.createGraphics();
 
         // sidewalk: the road outline grown by one tile, then the road over it
@@ -124,10 +146,10 @@ public final class MarketLevel extends Level {
 
         for (Stall s : stalls) {
             g.setColor(new Color(20, 8, 8, 38));
-            g.fillOval(s.box.x - 6, s.box.y + s.box.height - 10, s.box.width + 12, 22);
+            g.fillOval(s.box.x - 4, s.box.y + s.box.height - 6, s.box.width + 8, 14);
         }
         // leaves and pebbles scattered on the ground
-        for (int i = 0; i < 70; i++) {
+        for (int i = 0; i < 190; i++) {
             int x = Math.floorMod(Tiles.hash(i, 11), W), y = Math.floorMod(Tiles.hash(i, 23), H);
             g.setColor(new Color(i % 3 == 0 ? 0x7a3a2c : i % 3 == 1 ? 0x5f8a3a : 0x6f6f74));
             g.fillRect(x, y, 2, 1);
@@ -152,22 +174,21 @@ public final class MarketLevel extends Level {
         }
 
         // lamps on the sidewalk corners, crates, barrels
-        lamp(g, 103, 86);
-        lamp(g, 408, 86);
-        lamp(g, 103, 178);
-        lamp(g, 408, 178);
-        lamp(g, 197, 40);
-        lamp(g, 327, 40);
-        crate(g, new Rectangle(104, 40, 8, 8), true);
-        barrel(g, new Rectangle(414, 66, 8, 10));
-        crate(g, new Rectangle(404, 236, 8, 8), false);
+        for (int[] l : new int[][]{{119, 88}, {679, 88}, {119, 180}, {679, 180}, {119, 272}, {679, 272},
+                {343, 30}, {455, 30}, {250, 306}, {552, 306}}) {
+            lamp(g, l[0], l[1]);
+        }
+        crate(g, new Rectangle(46, 150, 8, 8), true);
+        barrel(g, new Rectangle(46, 240, 8, 10));
+        crate(g, new Rectangle(752, 150, 8, 8), false);
+        barrel(g, new Rectangle(752, 240, 8, 10));
 
         // stalls sorted by baseline so they overlap correctly
         stalls.stream().sorted(java.util.Comparator.comparingInt(s -> s.box.y + s.box.height)).forEach(s ->
-                Tiles.obj(g, s.box.x, s.box.y, s.box.width, s.box.height, 6, 5, 62, (gg, w, h) -> paintStall(gg, w, h, s)));
+                Tiles.obj(g, s.box.x, s.box.y, s.box.width, s.box.height, 4, 3, 58, (gg, w, h) -> paintStall(gg, w, h, s)));
 
         // flower pots beside the stall bases
-        for (int[] p : new int[][]{{186, 52}, {326, 52}, {94, 160}, {408, 160}, {228, 244}, {320, 244}}) {
+        for (int[] p : new int[][]{{146, 44}, {208, 44}, {272, 44}, {516, 44}, {580, 44}, {644, 44}, {122, 366}, {326, 366}, {460, 366}, {670, 366}}) {
             pot(g, p[0], p[1]);
         }
 
@@ -321,70 +342,52 @@ public final class MarketLevel extends Level {
 
     // ---- stalls
 
+    /** Compact stall (44 x 40): striped awning, goods on a wooden counter, a few hanging items. */
     private void paintStall(Graphics2D g, int w, int h, Stall s) {
-        int top = Math.max(36, h - 26);
-        // dark back of the stall
+        int top = h - 14;
         g.setColor(new Color(0x3b2519));
-        g.fillRect(3, 14, w - 6, top - 12);
+        g.fillRect(2, 8, w - 4, top - 6);
         g.setColor(new Color(0x4a2f20));
-        for (int x = 8; x < w - 4; x += 9) g.fillRect(x, 16, 1, top - 14);
-        // shelves on tall stalls
-        for (int sy = 36; sy < top - 12; sy += 18) {
-            g.setColor(WOOD_L);
-            g.fillRect(4, sy, w - 8, 3);
-            g.setColor(WOOD_D);
-            g.fillRect(4, sy + 3, w - 8, 1);
-            goods(g, s.goods, 6, sy - 10, w - 12);
+        for (int x = 6; x < w - 3; x += 6) g.fillRect(x, 9, 1, top - 8);
+        if (s.goods != Goods.VEG && s.goods != Goods.FRUIT) {
+            for (int x = 6; x + 6 <= w - 4; x += 11) hanging(g, s.goods, x, 8);
         }
-        // hanging goods under the awning
-        for (int x = 8; x < w - 8; x += 13) hanging(g, s.goods, x, 22);
+        goods(g, s.goods, 3, top - 13, w - 6);
         // posts
         g.setColor(new Color(0x6b4526));
-        g.fillRect(1, 18, 4, h - 18);
-        g.fillRect(w - 5, 18, 4, h - 18);
+        g.fillRect(0, 9, 3, h - 9);
+        g.fillRect(w - 3, 9, 3, h - 9);
         g.setColor(new Color(0x9a6a3e));
-        g.fillRect(1, 18, 1, h - 18);
-        g.fillRect(w - 5, 18, 1, h - 18);
+        g.fillRect(0, 9, 1, h - 9);
+        g.fillRect(w - 3, 9, 1, h - 9);
         // counter
         g.setColor(WOOD);
-        g.fillRect(0, top + 6, w, h - top - 6);
+        g.fillRect(0, top + 3, w, h - top - 3);
         g.setColor(new Color(0x6d4426));
-        for (int x = 9; x < w - 2; x += 9) g.fillRect(x, top + 8, 1, h - top - 11);
+        for (int x = 6; x < w - 1; x += 6) g.fillRect(x, top + 4, 1, h - top - 6);
         g.setColor(WOOD_D);
-        g.fillRect(0, h - 3, w, 3);
+        g.fillRect(0, h - 2, w, 2);
         g.setColor(WOOD_L);
-        g.fillRect(-1, top, w + 2, 6);
+        g.fillRect(-1, top, w + 2, 3);
         g.setColor(new Color(0xe3b57d));
         g.fillRect(-1, top, w + 2, 1);
-        // baskets with produce on the counter
-        for (int x = 4; x + 15 <= w - 3; x += 17) {
-            goods(g, s.goods, x, top - 14, 15);
-            g.setColor(new Color(0xa87a45));
-            g.fillRect(x, top - 5, 15, 7);
-            g.setColor(new Color(0x7b5430));
-            for (int i = 2; i < 15; i += 4) g.fillRect(x + i, top - 4, 1, 6);
-            g.fillRect(x, top - 2, 15, 1);
-            g.setColor(new Color(0xd1a463));
-            g.fillRect(x - 1, top - 6, 17, 2);
-        }
-        // striped awning with scalloped valance
-        int sw = 10, n = 0;
+        // striped awning with a scalloped valance
+        int sw = 6, n = 0;
         for (int x = 0; x < w; x += sw, n++) {
             Color c = n % 2 == 0 ? s.a : s.b;
             int ww = Math.min(sw, w - x);
             g.setColor(c);
-            g.fillRect(x, 0, ww, 16);
-            g.fillArc(x, 10, ww, 14, 180, 180);
+            g.fillRect(x, 0, ww, 9);
+            g.fillArc(x, 5, ww, 8, 180, 180);
             g.setColor(Tiles.shade(c, 0.8));
-            g.fillRect(x + ww - 2, 0, 2, 17);
-            g.fillArc(x + ww - 2, 12, 2, 10, 180, 180);
+            g.fillRect(x + ww - 1, 0, 1, 10);
             g.setColor(Tiles.shade(c, 1.18));
-            g.fillRect(x, 3, 2, 12);
+            g.fillRect(x, 2, 1, 7);
         }
         g.setColor(new Color(0, 0, 0, 80));
-        g.fillRect(0, 0, w, 3);
+        g.fillRect(0, 0, w, 2);
         g.setColor(new Color(255, 255, 255, 70));
-        g.fillRect(0, 3, w, 1);
+        g.fillRect(0, 2, w, 1);
     }
 
     private void hanging(Graphics2D g, Goods kind, int x, int y) {
@@ -501,7 +504,7 @@ public final class MarketLevel extends Level {
     // ------------------------------------------------------------------ decor that reacts to cleanliness
 
     private static final int[][] FLOWERS = {
-            {100, 70}, {196, 70}, {330, 70}, {410, 70}, {100, 198}, {410, 198}, {120, 224}, {300, 226}, {420, 226}};
+            {136, 92}, {250, 92}, {320, 92}, {480, 92}, {650, 92}, {136, 300}, {250, 300}, {540, 300}, {650, 300}, {300, 326}};
 
     @Override
     public void paintDecor(Graphics2D g, double clean, double t) {
@@ -517,13 +520,13 @@ public final class MarketLevel extends Level {
             }
         }
         if (clean >= 60) { // bunting across the main lane
-            for (int x = 212; x < 316; x += 12) {
-                int sag = (int) (Math.sin((x - 212) / 104.0 * Math.PI) * 5);
+            for (int x = 356; x < 444; x += 12) {
+                int sag = (int) (Math.sin((x - 356) / 88.0 * Math.PI) * 5);
                 g.setColor(new Color(new int[]{0xe74c3c, 0xf1c40f, 0x3498db, 0x2ecc71}[(x / 14) % 4]));
                 g.fillPolygon(new int[]{x, x + 10, x + 5}, new int[]{22 + sag, 22 + sag, 30 + sag}, 3);
             }
             g.setColor(new Color(0x2a1d1d));
-            g.drawLine(212, 22, 316, 22);
+            g.drawLine(356, 22, 444, 22);
         }
         // fountain water jets, stronger when the city is clean
         int cx = FOUNTAIN.x + FOUNTAIN.width / 2, cy = FOUNTAIN.y + 4;
@@ -537,10 +540,10 @@ public final class MarketLevel extends Level {
             g.fillRect(cx + dx, cy + dy, 3, 3);
         }
         if (clean >= 80) { // sparkles
-            for (int i = 0; i < 6; i++) {
+            for (int i = 0; i < 12; i++) {
                 double ph = (t * 0.8 + i * 0.17) % 1.0;
                 if (ph < 0.5) {
-                    int x = 116 + Math.floorMod(Tiles.hash(i, 1), 280), y = 84 + Math.floorMod(Tiles.hash(i, 2), 120);
+                    int x = 132 + Math.floorMod(Tiles.hash(i, 1), 536), y = 84 + Math.floorMod(Tiles.hash(i, 2), 230);
                     g.setColor(new Color(255, 255, 200, (int) (200 * (1 - ph * 2))));
                     g.fillRect(x, y - 3, 2, 8);
                     g.fillRect(x - 3, y, 8, 2);

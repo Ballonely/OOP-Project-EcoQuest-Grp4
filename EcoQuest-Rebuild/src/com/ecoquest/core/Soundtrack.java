@@ -1,51 +1,46 @@
 package com.ecoquest.core;
 
 import java.io.File;
-import javax.sound.sampled.AudioInputStream;
-import javax.sound.sampled.AudioSystem;
-import javax.sound.sampled.Clip;
-import javax.sound.sampled.FloatControl;
 
 public final class Soundtrack {
-    private Clip clip;
-    private int lastVolume = -1;
-    private int pausedFrame = -1;
+    private enum Track { BEACH, WARNING, BOSS }
 
-    public synchronized void update(boolean beachStage, boolean enabled, int volume, boolean gameMuted, boolean paused) {
+    private Mp3Playback playback;
+    private Track track;
+    private boolean warningCueFinished;
+
+    public synchronized void update(boolean beachStage, boolean enabled, int volume,
+                                    boolean gameMuted, boolean paused,
+                                    boolean bossWarning, boolean bossBattle) {
         if (!beachStage || !enabled) { stop(); return; }
-        if (clip == null || !clip.isOpen()) {
-            try (AudioInputStream in = AudioSystem.getAudioInputStream(new File("assets/music/NaturalMystic.wav"))) {
-                clip = AudioSystem.getClip();
-                clip.open(in);
-                lastVolume = -1;
-            } catch (Exception ignored) { stop(); return; }
+        if (!bossWarning) warningCueFinished = false;
+        Track desired = bossWarning ? Track.WARNING : bossBattle ? Track.BOSS : Track.BEACH;
+        if (desired == Track.WARNING && track == Track.WARNING && playback != null && playback.isFinished())
+            warningCueFinished = true;
+        if (desired == Track.WARNING && warningCueFinished) desired = Track.BOSS;
+        if (track != desired || playback == null) {
+            if (playback != null) playback.stop();
+            track = desired;
+            String file = switch (desired) {
+                case WARNING -> "BeachWarning.mp3";
+                case BOSS -> "BeachBoss.mp3";
+                case BEACH -> "NaturalMystic.mp3";
+            };
+            playback = new Mp3Playback(new File("assets/music/" + file), desired != Track.WARNING);
+            playback.setVolume(volume);
+            playback.setPaused(paused || gameMuted || volume == 0);
+            playback.start();
+        } else {
+            playback.setVolume(volume);
+            playback.setPaused(paused || gameMuted || volume == 0);
         }
-        int effectiveVolume = gameMuted ? 0 : volume;
-        setVolume(effectiveVolume);
-        if (paused || effectiveVolume == 0) {
-            if (clip.isRunning()) { pausedFrame = clip.getFramePosition(); clip.stop(); }
-        } else if (!clip.isRunning()) {
-            if (pausedFrame >= 0) clip.setFramePosition(Math.min(pausedFrame, clip.getFrameLength() - 1));
-            pausedFrame = -1;
-            if (effectiveVolume > 0) clip.loop(Clip.LOOP_CONTINUOUSLY);
-        }
-    }
-
-    private void setVolume(int volume) {
-        if (clip == null || volume == lastVolume) return;
-        try {
-            FloatControl gain = (FloatControl) clip.getControl(FloatControl.Type.MASTER_GAIN);
-            float fraction = Math.max(0.00001f, Math.min(1f, volume / 100f));
-            float db = volume == 0 ? gain.getMinimum() : (float) (20 * Math.log10(fraction));
-            gain.setValue(Math.max(gain.getMinimum(), Math.min(gain.getMaximum(), db)));
-        } catch (IllegalArgumentException ignored) { }
-        lastVolume = volume;
     }
 
     public synchronized void stop() {
-        if (clip != null) { clip.stop(); clip.close(); clip = null; }
-        pausedFrame = -1;
-        lastVolume = -1;
+        if (playback != null) playback.stop();
+        playback = null;
+        track = null;
+        warningCueFinished = false;
     }
 
     public synchronized void restart() { stop(); }

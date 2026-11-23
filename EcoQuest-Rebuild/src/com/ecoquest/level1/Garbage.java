@@ -23,6 +23,7 @@ public class Garbage extends Entity {
     private final ecoquest.TrashDef marketDefinition;
     private boolean highlighted;
     private boolean coinCollected;
+    private boolean bossWaveLitter;
 
     public Garbage(GarbageType type, int variant, double x, double y) {
         super(x, y, SIZE, SIZE);
@@ -50,12 +51,15 @@ public class Garbage extends Entity {
     public int getVariant() { return variant; }
     public boolean isCoinCollected() { return coinCollected; }
     public void markCoinCollected() { coinCollected = true; }
+    public boolean isBossWaveLitter() { return bossWaveLitter; }
+    public void markBossWaveLitter() { bossWaveLitter = true; }
 
     public Garbage copyAt(double newX, double newY) {
         Garbage copy = marketDefinition == null
                 ? new Garbage(type, variant, newX, newY)
                 : new Garbage(marketDefinition, newX, newY);
         if (coinCollected) copy.markCoinCollected();
+        if (bossWaveLitter) copy.markBossWaveLitter();
         return copy;
     }
 

@@ -10,11 +10,11 @@ if errorlevel 1 (
 )
 
 if not exist "bin" mkdir "bin"
-javac -encoding UTF-8 -d bin src\com\ecoquest\Main.java src\com\ecoquest\core\*.java src\com\ecoquest\entities\*.java src\com\ecoquest\level1\*.java src\com\ecoquest\ui\*.java src\com\ecoquest\util\*.java src\ecoquest\*.java
+javac -encoding UTF-8 -cp lib\jlayer-1.0.1.jar -d bin src\com\ecoquest\Main.java src\com\ecoquest\core\*.java src\com\ecoquest\entities\*.java src\com\ecoquest\level1\*.java src\com\ecoquest\level2\*.java src\com\ecoquest\ui\*.java src\com\ecoquest\util\*.java src\ecoquest\*.java
 if errorlevel 1 (
   echo Build failed. Check the source and JDK version.
   pause
   exit /b 1
 )
 
-java -cp bin com.ecoquest.Main
+java -cp "bin;lib\jlayer-1.0.1.jar" com.ecoquest.Main

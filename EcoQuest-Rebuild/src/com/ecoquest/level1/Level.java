@@ -6,6 +6,7 @@ import java.awt.geom.Rectangle2D;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 
@@ -21,6 +22,7 @@ public abstract class Level {
     protected final List<Garbage> garbage = new ArrayList<>();
     protected final List<TrashBin> bins = new ArrayList<>();
     private final List<Entity> npcs = new ArrayList<>();
+    private final List<Prop> temporaryProps = new ArrayList<>();
     protected final Random rng = new Random();
     protected int spawnCol, spawnRow;
 
@@ -100,7 +102,7 @@ public abstract class Level {
     }
 
     private boolean overlapsScenery(Rectangle2D r) {
-        for (Prop p : props) if (!(p instanceof Puddle) && !(p instanceof FlowerBed) && p.bounds().intersects(r)) return true;
+        for (Prop p : props) if (!p.isGroundDecal() && !(p instanceof Puddle) && !(p instanceof FlowerBed) && p.bounds().intersects(r)) return true;
         for (TrashBin b : bins) if (b.bounds().intersects(r)) return true;
         for (Garbage g : garbage) if (g.bounds().intersects(r)) return true;
         return false;
@@ -137,7 +139,11 @@ public abstract class Level {
 
     public double speedFactorAt(Rectangle2D box) {
         double f = 1.0;
-        for (Prop p : props) if (p.speedFactor() < f && p.bounds().intersects(box)) f = p.speedFactor();
+        for (Prop p : props) {
+            boolean overlaps = p instanceof WaterImpact impact
+                    ? impact.overlapsSlowZone(box) : p.bounds().intersects(box);
+            if (p.speedFactor() < f && overlaps) f = p.speedFactor();
+        }
         return f;
     }
 
@@ -196,6 +202,30 @@ public abstract class Level {
     public int getSortedCorrect() { return sortedCorrect; }
 
     public void addNpc(Entity npc) { npcs.add(npc); }
+
+    public void addTemporaryProp(Prop prop) {
+        props.add(prop);
+        temporaryProps.add(prop);
+    }
+
+    public void updateTemporaryProps(double dt) {
+        Iterator<Prop> iterator = temporaryProps.iterator();
+        while (iterator.hasNext()) {
+            Prop prop = iterator.next();
+            if (prop instanceof TimedProp timed && !timed.update(dt)) {
+                props.remove(prop);
+                iterator.remove();
+            }
+        }
+    }
+
+    public boolean applyTemporaryEffects(Player player) {
+        boolean hit = false;
+        for (Prop prop : temporaryProps) {
+            if (prop instanceof WaterImpact impact && impact.tryHitPlayer(player)) hit = true;
+        }
+        return hit;
+    }
 
     /** A wrongly sorted item falls back onto the ground near the player. */
     public void dropGarbage(GarbageType t, double x, double y) {

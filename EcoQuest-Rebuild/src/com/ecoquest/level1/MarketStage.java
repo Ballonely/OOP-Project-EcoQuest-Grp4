@@ -14,7 +14,7 @@ public final class MarketStage extends Level {
     private final List<ecoquest.TrashDef> litter = ecoquest.TrashCatalog.load(ecoquest.MapId.MARKET);
     private final List<MarketCart> carts = new ArrayList<>();
     private MarketKing wasteKing;
-    private double cartCooldown;
+    private double cartCooldown, spawnClock, cleanliness = 30;
 
     @Override public String getName() { return "Level 3: Town Marketplace"; }
 
@@ -79,8 +79,8 @@ public final class MarketStage extends Level {
         var pile = reference.pile();
         double sx = Config.WORLD_W / (double) ecoquest.Level.W;
         double sy = Config.WORLD_H / (double) ecoquest.Level.H;
-        addRandomLitterNear(pile.x * sx, pile.y * sy, reference.cfg.pileItems(), 38 * sx);
-        scatterGarbage(reference.cfg.target());
+        addRandomLitterNear(pile.x * sx, pile.y * sy, reference.cfg.pileItems(), 64 * sx);
+        scatterGarbage(reference.cfg.startItems());
     }
 
     @Override protected Garbage createGarbage(double x, double y) {
@@ -91,8 +91,8 @@ public final class MarketStage extends Level {
         double sx = Config.WORLD_W / (double) ecoquest.Level.W;
         double sy = Config.WORLD_H / (double) ecoquest.Level.H;
         double mapX = x / sx, mapY = y / sy;
-        return new Rectangle(96, 64, 320, 160).contains(mapX, mapY)
-                || new Rectangle(192, 0, 144, 80).contains(mapX, mapY);
+        return new Rectangle(128, 80, 544, 240).contains(mapX, mapY)
+                || new Rectangle(352, 0, 96, 80).contains(mapX, mapY);
     }
 
     @Override protected void drawGround(Graphics2D g) {
@@ -122,6 +122,44 @@ public final class MarketStage extends Level {
     public void updateKing(double dt) {
         if (wasteKing != null) wasteKing.update(dt, getProgressPercent());
     }
+
+    public void updateSpawning(double dt, int carriedItems) {
+        if (isGoalReached()) return;
+        spawnClock += dt;
+        double cleanGain = 70.0 / reference.cfg.target();
+        int needed = (int) Math.ceil((100 - cleanliness) / cleanGain);
+        int available = garbageLeft() + carriedItems;
+        double interval = available < needed ? 1.0 : reference.cfg.spawnEvery();
+        if (spawnClock < interval) return;
+        spawnClock = 0;
+        if (available < needed || garbageLeft() < reference.cfg.maxGround()) addRandomLitterWave(1);
+    }
+
+    @Override public void registerCorrectSort() {
+        super.registerCorrectSort();
+        cleanliness = Math.min(100, cleanliness + 70.0 / reference.cfg.target());
+    }
+
+    public void penalizeWrongSort(int litterToAdd) {
+        cleanliness = Math.max(0, cleanliness - 2.0);
+        var pile = reference.pile();
+        double sx = Config.WORLD_W / (double) ecoquest.Level.W;
+        double sy = Config.WORLD_H / (double) ecoquest.Level.H;
+        int added = addRandomLitterNear(pile.x * sx, pile.y * sy, litterToAdd, 64 * sx);
+        if (added < litterToAdd) addRandomLitterWave(litterToAdd - added);
+    }
+
+    @Override public int getProgressPercent() {
+        return (int) Math.round(Math.max(0, Math.min(100, (cleanliness - 30) * 100.0 / 70.0)));
+    }
+
+    @Override public void restoreProgress(int percent) {
+        super.restoreProgress(percent);
+        cleanliness = 30 + 70 * Math.max(0, Math.min(100, percent)) / 100.0;
+    }
+
+    public boolean isGoalReached() { return cleanliness >= 100; }
+    public int carryCapacity() { return reference.cfg.capacity(); }
 
     public void kingReact() {
         if (wasteKing != null) wasteKing.react();
