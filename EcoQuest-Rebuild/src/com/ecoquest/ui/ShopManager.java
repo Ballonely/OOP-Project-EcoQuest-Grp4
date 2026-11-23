@@ -22,7 +22,7 @@ public final class ShopManager {
 
     public void handleInput(InputHandler input, int width, int height, Listener listener) {
         statusTime = Math.max(0, statusTime - 1.0 / 60.0);
-        if (input.isKeyJustPressed(KeyEvent.VK_ESCAPE) || input.isKeyJustPressed(KeyEvent.VK_BACK_SPACE)) { listener.closeShop(); return; }
+        if (input.isKeyJustPressed(KeyEvent.VK_BACK_SPACE)) { listener.closeShop(); return; }
         if (input.isKeyJustPressed(KeyEvent.VK_UP) || input.isKeyJustPressed(KeyEvent.VK_LEFT)) selected = 0;
         if (input.isKeyJustPressed(KeyEvent.VK_DOWN) || input.isKeyJustPressed(KeyEvent.VK_RIGHT)) selected = 1;
         if (input.isKeyJustPressed(KeyEvent.VK_1) || input.isKeyJustPressed(KeyEvent.VK_2)) {

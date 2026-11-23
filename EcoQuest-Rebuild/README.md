@@ -1,12 +1,12 @@
 # EcoQuest group project copy
 
-This is one Java project based on the supplied Unfinished game, its Residential Street gameplay, and the Level 3 Market source. The original menu, illustrated five-region selector, player sprites, and street map remain in place. Each region now opens a cleaning stage.
+This is the shared EcoQuest project with the teammate stage updates integrated into the current settings, menu, shared shop, and game runner. The original menu, five-region selector, player sprites, and shared progress/equipment save remain in place.
 
 ## Run it
 
 1. Install a 64-bit JDK 17 or newer. VS Code by itself does not include Java. Check in a terminal with `java --version` and `javac --version`.
 2. Install Microsoft's **Extension Pack for Java** in VS Code.
-3. Open this `EcoQuest-Rebuild` folder in VS Code and press **F5**, or double-click `run.bat`.
+3. Open this `EcoQuest-Rebuild` folder in VS Code and press **F5**, or double-click `run.bat`. The project includes its MP3 decoder under `lib/`.
 
 If `java` or `javac` is not recognized, install the [Eclipse Temurin JDK 17 for Windows x64](https://adoptium.net/temurin/releases/?version=17&os=windows&arch=x64&package=jdk), then reopen VS Code. Microsoft's [Java in VS Code guide](https://code.visualstudio.com/docs/languages/java) has setup details.
 
@@ -33,11 +33,12 @@ The save file `save.properties` is created beside the game after progress change
 ## Stages and audio
 
 - Residential Street uses the supplied original level and player sprites.
-- Town Marketplace uses the newest Level 3 layout and pixel-art stalls, with a weighted market-only trash catalogue and matching pixel icons. It has the Waste King, a five-minute timer, moving carts that can knock a carried item loose, and puddles that slow movement. Correct sorting fills the Market Stage Completion Bar; mistakes cost a heart and add litter. Market rewards follow the Level 3 build, and the existing shared shop remains in place.
-- Coastal Beach uses the supplied bright beach image with lighthouse and umbrellas, 120 scattered beach items plus seaweed/driftwood in the water, and the supplied Natural Mystic track. Trees, huts, umbrellas, the pier, and other scenery block the player and are kept clear of trash. The four bins sit in an open sand area.
+- Public Park uses Jaden's park layout, paths, pond, trees, benches, ten lamps, six moving LitterBots, and the Litter Beast. The beast appears after park cleanliness reaches 50%, adds litter, and is defeated at 80%; the park keeps its three-minute timer and 150-coin boss reward.
+- Town Marketplace uses Jheremy's newest Level 3 layout, 16 pixel-art stalls, weighted market trash data, and the item's matching pixel icons. Its latest tuning is a six-minute timer, 34 starting items, a three-item bag, and a 40-item target. Moving carts can knock a carried item loose; puddles slow movement. Market mistakes cost a heart and add litter. The existing shared shop remains in place.
+- Coastal Beach uses the supplied bright beach image with lighthouse, huts, umbrellas, pier, and scattered obstacles; 64 beach items plus 6 seaweed/driftwood pieces in the water; and the supplied Natural Mystic track. Scenery collision also keeps trash spawns away from props and bins. The four bins sit in open sand.
 - The boat appears when the player reaches blue water. `W/S` throttle and `A/D` steer with gradual acceleration and turn rate.
-- At 75% beach cleanup, a warning cinematic zooms to the sewage morphling as it rises in a water splash, then starts five trash waves. The boss shifts position and sprays water; touching it slows the player for six seconds. Clear all five waves within five minutes; it has no health bar.
-- The beach soundtrack loops without the silent tail. The Music Volume slider reaches silence at 0%; the speaker button toggles master game mute.
-- Public Park and City Center are playable in the same tile-art style and use the same sorting rules.
+- The beach boss starts only after all 70 regular pieces are sorted. The stage bar holds at 99% during the fight; boss-wave litter uses a separate counter and does not change beach completion. Defeating the boss completes the final 1%. Five waves scatter 10, 13, 16, 19, and 22 pieces across the island and water, with five minutes to finish. Every 5.5 seconds the boss launches a spaced, alternating barrage of at least eight attack circles; bright red circles and a MOVE warning give 1.15 seconds to escape. The muddy puddles last three seconds. A direct hit stuns and mud-slows the player, but deals no health damage. The boss shifts slightly and slows the player for six seconds on contact.
+- Beach audio switches from Natural Mystic to the supplied red-alert cue during the warning, then to the supplied battle track after the cinematic. It returns to the beach track after the boss ends. Music pauses in Settings; the 0–100% slider controls stage music and the speaker button mutes game audio.
+- Residential Street and City Center continue using the same shared sorting rules and UI.
 
-The original MP3 is in `assets/music/NaturalMystic.mp3`. `NaturalMystic.wav` is a PCM copy used by Java's built-in audio player, so no extra library is needed. Coastal litter uses the 24 items from the supplied resource pack reference; Town Marketplace loads its own weighted items from `data/trash/market.csv` and displays the market's item-specific icons. Animal poo is worth 1 coin.
+The supplied tracks are in `assets/music/`. MP3 decoding uses JLayer 1.0.1, bundled in `lib/` with its LGPL-2.1 license; VS Code is configured to include that jar. Coastal litter uses the resource-pack items; Town Marketplace loads its own weighted items from `data/trash/market.csv` and uses the teammate icon atlas. Animal poo is worth 1 coin.

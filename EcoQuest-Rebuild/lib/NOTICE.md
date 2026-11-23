@@ -1,0 +1,1 @@
+`jlayer-1.0.1.jar` is the JavaLayer MP3 decoder/player library by JavaZoom, distributed under the GNU Lesser General Public License 2.1. Its license text is in `LICENSE-LGPL-2.1.txt`; the Maven metadata is in `jlayer-1.0.1.pom`.

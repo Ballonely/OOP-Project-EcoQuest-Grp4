@@ -151,7 +151,10 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
                 || settingsReturnState == GameState.PAUSED || settingsReturnState == GameState.GAME_OVER
                 || (settingsReturnState == GameState.SHOP && shopReturnState == GameState.PLAYING))));
         boolean soundtrackPaused = restartConfirm || state == GameState.SETTINGS || state == GameState.PAUSED;
-        soundtrack.update(beachActive, true, profile.getMusicVolume(), profile.isGameMuted(), soundtrackPaused);
+        boolean bossWarning = beachActive && level1Game != null && level1Game.isBossWarningActive();
+        boolean bossBattle = beachActive && level1Game != null && level1Game.isBossBattleActive();
+        soundtrack.update(beachActive, true, profile.getMusicVolume(), profile.isGameMuted(),
+                soundtrackPaused, bossWarning, bossBattle);
         if (restartConfirm) {
             updateRestartConfirmation();
             input.endFrame();
@@ -180,8 +183,9 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
                 openSettings();
             }
         }
+        boolean mainMenuShop = state == GameState.SHOP && shopReturnState == GameState.MAIN_MENU;
         if (input.isKeyJustPressed(KeyEvent.VK_ESCAPE) && state != GameState.SETTINGS
-                && state != GameState.MAIN_MENU) {
+                && state != GameState.MAIN_MENU && !mainMenuShop) {
             openSettings();
             input.endFrame();
             return;
@@ -419,7 +423,10 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
                 : (int) Math.round((state == GameState.MAIN_MENU ? 58 : 12) * toolbarScale(w, h));
         return Math.max(6, Math.min(y, h - toolbarSize(w, h) - 8));
     }
-    private boolean hasGearButton() { return state != GameState.MAIN_MENU && state != GameState.SETTINGS; }
+    private boolean hasGearButton() {
+        return state != GameState.MAIN_MENU && state != GameState.SETTINGS
+                && !(state == GameState.SHOP && shopReturnState == GameState.MAIN_MENU);
+    }
     private java.awt.Rectangle gearButton(int w, int h) {
         int size = toolbarSize(w, h), y = toolbarY(w, h);
         return new java.awt.Rectangle(w - size - 12, y, size, size);

@@ -18,11 +18,11 @@ public class GamePanel {
     private static final double BIN_RANGE = 17;
     private static final double HUD_BASE_WIDTH = 1250.0;
     private static final double HUD_BASE_HEIGHT = 780.0;
-    private static final double BOSS_WARNING_PHASE = 1.35;
-    private static final double BOSS_ZOOM_IN_PHASE = 1.2;
-    private static final double BOSS_SPLASH_PHASE = 2.1;
-    private static final double BOSS_ZOOM_OUT_PHASE = 1.1;
-    private static final double BOSS_CINEMATIC_DURATION = 6.45;
+    private static final double BOSS_WARNING_PHASE = 1.55;
+    private static final double BOSS_ZOOM_IN_PHASE = 1.4;
+    private static final double BOSS_SPLASH_PHASE = 2.35;
+    private static final double BOSS_ZOOM_OUT_PHASE = 1.2;
+    private static final double BOSS_CINEMATIC_DURATION = 7.45;
     private final BufferedImage frame = new BufferedImage(WORLD_W, WORLD_H, BufferedImage.TYPE_INT_ARGB);
 
     private Level level;
@@ -48,12 +48,14 @@ public class GamePanel {
         "Man, I'm wasting my time staring into this thing.",
         "I have no trash in me.", "I mean, unless I gotta clean the bin, there's nothing else to do here."
     };
-    private boolean bossStarted, bossFailed, bossDefeated, showBossWarning;
-    private boolean marketTimedOut;
-    private int bossWave, bossNextSortTarget;
+    private boolean bossStarted, bossFailed, bossDefeated, showBossWarning, bossVictorySequence;
+    private boolean marketTimedOut, parkTimedOut;
+    private int bossWave, bossWaveRemaining, bossAttackPattern;
     private int marketMistakes;
-    private double bossWarningTime, bossTimeLeft;
+    private double bossWarningTime, bossTimeLeft, bossVictoryTime, bossAttackCooldown, bossAttackAnimation;
+    private final List<double[]> bossAttackTargets = new ArrayList<>();
     private double marketTimeLeft;
+    private double parkTimeLeft;
     private double stageTime;
     private double displayedStageProgress;
 
@@ -69,11 +71,17 @@ public class GamePanel {
     public boolean didWin() { return cleared; }
     public int getScore() { return player.getScore(); }
     public int getMoney() { return player.getMoney(); }
-    public int getStageProgress() { return level.getProgressPercent(); }
+    public int getStageProgress() {
+        if ("Coastal Beach".equals(stageName) && bossStarted && !bossDefeated) return 99;
+        return level.getProgressPercent();
+    }
+    public boolean isBossWarningActive() { return bossStarted && showBossWarning && !bossFailed; }
+    public boolean isBossBattleActive() { return bossStarted && !showBossWarning && !bossDefeated && !bossFailed && !gameOver; }
     public boolean wasCompletedBeforeRun() { return completedBeforeRun; }
     public String getFailureMessage() {
         if (bossFailed) return "The five beach-cleaning waves were not cleared in time.";
         if (marketTimedOut) return "Time ran out. The market still needs cleaning.";
+        if (parkTimedOut) return "Time ran out. The park still needs cleaning.";
         return "You ran out of hearts!";
     }
 
@@ -84,16 +92,23 @@ public class GamePanel {
         level.restoreProgress(savedProgress);
         player = new Player(level.getSpawnX(), level.getSpawnY());
         player.equipCleaner(profile.hasSunGrabber(), profile.hasVacuumPack());
+        if (level instanceof MarketStage market) {
+            int sharedCapacity = profile.hasVacuumPack() ? 10 : profile.hasSunGrabber() ? 7 : market.carryCapacity();
+            player.setBagCapacity(sharedCapacity);
+        }
         cleared = completedBeforeRun;
         gameOver = false;
         quipCooldown = bubbleTime = 0;
         bubbleText = "";
-        bossStarted = bossFailed = bossDefeated = showBossWarning = false;
-        marketTimedOut = false;
+        bossStarted = bossFailed = bossDefeated = showBossWarning = bossVictorySequence = false;
+        marketTimedOut = parkTimedOut = false;
         marketMistakes = 0;
-        bossWave = bossNextSortTarget = 0;
-        bossWarningTime = bossTimeLeft = 0;
+        bossWave = bossWaveRemaining = bossAttackPattern = 0;
+        bossWarningTime = bossTimeLeft = bossVictoryTime = 0;
+        bossAttackCooldown = bossAttackAnimation = 0;
+        bossAttackTargets.clear();
         marketTimeLeft = level instanceof MarketStage market ? market.timeLimitSeconds() : 0;
+        parkTimeLeft = level instanceof Level2Park park ? park.timeLimit() : 0;
         stageTime = 0;
         displayedStageProgress = getStageProgress();
         showToast("Clean " + stageName + "! Sort litter into the matching bins.", 4);
@@ -115,8 +130,20 @@ public class GamePanel {
                 showToast("Time is up. The market is still full of litter.", 4);
                 return;
             }
+            market.updateSpawning(dt, player.getBag().size());
             market.updateKing(dt);
         }
+        if (level instanceof Level2Park park && parkTimeLeft > 0) {
+            parkTimeLeft = Math.max(0, parkTimeLeft - dt);
+            if (parkTimeLeft == 0 && !park.isBeastDefeated()) {
+                parkTimedOut = true;
+                gameOver = true;
+                showToast("Time is up. The park is still full of litter.", 4);
+                return;
+            }
+        }
+        level.updateTemporaryProps(dt);
+        if (level.applyTemporaryEffects(player)) showToast("Sewage splash! Stunned and slowed.", 1.8);
         if (showBossWarning) {
             updateCoastalBoss(dt);
             return;
@@ -160,9 +187,22 @@ public class GamePanel {
             else if (nearGarbage != null) pickUp(nearGarbage);
         }
 
+        if (level instanceof Level2Park park) {
+            park.updatePark(dt, player);
+            if (park.consumeBeastReward()) {
+                player.addMoney(Level2Park.BEAST_REWARD);
+                profile.addCoins(Level2Park.BEAST_REWARD);
+                showToast("Litter Beast defeated! +\u20B1" + Level2Park.BEAST_REWARD, 3);
+            }
+            if (player.isDead()) { gameOver = true; return; }
+        }
+
         if ("Coastal Beach".equals(stageName)) updateCoastalBoss(dt);
 
-        if (level.garbageLeft() == 0 && player.bagEmpty()) {
+        boolean bossGatePassed = !(level instanceof Level2Park park) || park.isBeastDefeated();
+        if ("Coastal Beach".equals(stageName)) bossGatePassed = bossDefeated && !bossVictorySequence;
+        boolean marketGoalReached = level instanceof MarketStage market && market.isGoalReached();
+        if (marketGoalReached || (level.garbageLeft() == 0 && player.bagEmpty() && bossGatePassed)) {
             cleared = true;
             displayedStageProgress = 100;
             int finishReward = 100;
@@ -200,7 +240,10 @@ public class GamePanel {
             player.addMoney(reward);
             profile.addCoins(reward);
             player.addScore(10);
-            level.registerCorrectSort();
+            if (carried.isBossWaveLitter() && "Coastal Beach".equals(stageName)) {
+                bossWaveRemaining = Math.max(0, bossWaveRemaining - 1);
+            } else if (level instanceof MarketStage marketStage) marketStage.registerCorrectSort();
+            else level.registerCorrectSort();
             if (market && item == GarbageType.HAZARDOUS) {
                 player.addMoney(10);
                 profile.addCoins(10);
@@ -216,16 +259,16 @@ public class GamePanel {
         } else {
             player.addScore(-5);
             player.hurt(1);
-            level.dropGarbage(carried, player.centerX(), player.centerY());
             if (level instanceof MarketStage market) {
                 marketMistakes++;
                 market.kingReact();
-                level.addRandomLitterWave(2);
+                market.penalizeWrongSort(2);
                 String tip = carried.getItemTip();
                 String lesson = tip.isBlank() ? "" : " " + tip;
                 showToast(carried.getItemName() + " goes in the " + carried.getType().getLabel()
                         + " bin. " + lesson + " -1 HP; the Waste King adds litter.", 2.8);
             } else {
+                level.dropGarbage(carried, player.centerX(), player.centerY());
                 showToast("Wrong bin! " + item.getLabel() + " goes elsewhere.  -1 HP", 2);
             }
             if (player.isDead()) {
@@ -251,18 +294,33 @@ public class GamePanel {
     }
 
     private void updateCoastalBoss(double dt) {
-        if (!bossStarted && getStageProgress() >= 75) {
+        if (!bossStarted && level.garbageLeft() == 0 && player.bagEmpty()
+                && level.getProgressPercent() >= 100) {
             bossStarted = true;
             showBossWarning = true;
             bossWarningTime = BOSS_CINEMATIC_DURATION;
             showToast("WARNING! A sewage morphling is washing trash ashore!", 4);
         }
-        if (!bossStarted || bossDefeated || gameOver || cleared) return;
-        if (showBossWarning) {
-            bossWarningTime = Math.max(0, bossWarningTime - dt);
-            if (bossWarningTime == 0) { showBossWarning = false; bossTimeLeft = 300; startBeachWave(); }
+        if (!bossStarted || bossFailed || gameOver || cleared) return;
+        if (bossVictorySequence) {
+            bossVictoryTime = Math.max(0, bossVictoryTime - dt);
+            if (bossVictoryTime == 0) bossVictorySequence = false;
             return;
         }
+        if (bossDefeated) return;
+        if (showBossWarning) {
+            bossWarningTime = Math.max(0, bossWarningTime - dt);
+            if (bossWarningTime == 0) {
+                showBossWarning = false;
+                bossTimeLeft = 300;
+                bossAttackCooldown = 5.5;
+                ((Level4Beach) level).setBossArena(true);
+                startBeachWave();
+            }
+            return;
+        }
+        bossAttackAnimation = Math.max(0, bossAttackAnimation - dt);
+        if (bossAttackAnimation == 0) bossAttackTargets.clear();
         bossTimeLeft = Math.max(0, bossTimeLeft - dt);
         if (bossTimeLeft <= 0) {
             bossFailed = true;
@@ -270,22 +328,36 @@ public class GamePanel {
             showToast("The tide overwhelmed the beach. Try again!", 4);
             return;
         }
-        if (morphling.touches(player.centerX(), player.centerY(), stageTime, 24)) player.applySlow(6);
-        if (bossWave > 0 && level.getSortedCorrect() >= bossNextSortTarget) {
-            if (bossWave >= 5) bossDefeated = true;
+        if (morphling.touches(player.centerX(), player.centerY(), stageTime, 30)) player.applySlow(6);
+        bossAttackCooldown -= dt;
+        if (bossAttackCooldown <= 0) {
+            Level4Beach beach = (Level4Beach) level;
+            bossAttackTargets.clear();
+            bossAttackTargets.addAll(beach.getBossAttackPattern(bossAttackPattern++));
+            for (double[] target : bossAttackTargets) level.addTemporaryProp(new WaterImpact(target[0], target[1]));
+            bossAttackAnimation = WaterImpact.WARNING_SECONDS;
+            bossAttackCooldown = 5.5;
+        }
+        if (bossWave > 0 && bossWaveRemaining == 0 && level.garbageLeft() == 0 && player.bagEmpty()) {
+            if (bossWave >= 5) {
+                bossDefeated = true;
+                bossVictorySequence = true;
+                bossVictoryTime = 2.4;
+                showToast("The Sewage Morphling is defeated!", 3);
+            }
             else startBeachWave();
         }
     }
 
     private void startBeachWave() {
         Level4Beach beach = (Level4Beach) level;
-        double y = morphling.y(stageTime) + 31;
-        int x = beach.getSandyEdgeX(y) - 1;
-        int added = level.addRandomLitterNear(x, y, 10, 28);
-        if (added < 10) added += level.addRandomLitterWave(10 - added);
+        int waveCount = 10 + bossWave * 3;
+        int added = beach.scatterBossWaveTrash(waveCount);
+        for (int retry = 0; added < waveCount && retry < 3; retry++)
+            added += beach.scatterBossWaveTrash(waveCount - added);
         bossWave++;
-        bossNextSortTarget = level.getSortedCorrect() + Math.max(1, added);
-        showToast("Wave " + bossWave + " of 5! Sort the litter washed ashore.", 3);
+        bossWaveRemaining = added;
+        showToast("Wave " + bossWave + " of 5! " + added + " pieces washed ashore.", 3);
     }
 
     private boolean isDown(InputHandler input, int a, int b) {
@@ -296,9 +368,10 @@ public class GamePanel {
     public void renderFrame(Graphics2D g, int width, int height) {
         Graphics2D fg = frame.createGraphics();
         level.draw(fg, player);
-        if (bossStarted && !bossDefeated && "Coastal Beach".equals(stageName)) {
+        if (bossStarted && "Coastal Beach".equals(stageName)) {
             if (showBossWarning) morphling.drawEntrance(fg, stageTime, bossSplashProgress());
-            else morphling.draw(fg, stageTime);
+            else if (bossVictorySequence) morphling.drawDefeated(fg, stageTime, 1 - bossVictoryTime / 2.4);
+            else if (!bossDefeated) morphling.draw(fg, stageTime, bossAttackAnimation, bossAttackTargets);
         }
         fg.dispose();
 
@@ -385,20 +458,29 @@ public class GamePanel {
 
         g.setFont(new Font(Font.DIALOG, Font.BOLD, Math.max(8, (int) Math.round(12 * scale))));
         g.setColor(new Color(255, 250, 229));
-        g.drawString("Trash Left: " + (level.garbageLeft() + player.getBag().size()), innerX,
-                panelY + (int) Math.round(77 * scale));
+        String trashCounter = bossStarted && !bossDefeated
+                ? "Wave Trash Left: " + bossWaveRemaining
+                : "Trash Left: " + (level.garbageLeft() + player.getBag().size());
+        g.drawString(trashCounter, innerX, panelY + (int) Math.round(77 * scale));
 
         if (bossStarted && !bossDefeated) {
             int seconds = (int) Math.ceil(bossTimeLeft);
-            int waveWidth = Math.min((int) Math.round(260 * scale), W - margin * 2);
+            int waveWidth = Math.min((int) Math.round(310 * scale), W - margin * 2);
             int waveHeight = Math.max(28, (int) Math.round(38 * scale));
             int waveY = panelY + panelHeight + margin;
             panel(g, (W - waveWidth) / 2, waveY, waveWidth, waveHeight);
             g.setColor(new Color(255, 112, 103));
-            String waveText = "WAVE " + Math.max(1, bossWave) + "/5   " + (seconds / 60) + ":" + String.format("%02d", seconds % 60);
-            g.setFont(new Font(Font.DIALOG, Font.BOLD, Math.max(10, (int) Math.round(15 * scale))));
+            String waveText = "WAVE " + Math.max(1, bossWave) + "/5   " + bossWaveRemaining
+                    + " LEFT   " + (seconds / 60) + ":" + String.format("%02d", seconds % 60);
+            g.setFont(new Font(Font.DIALOG, Font.BOLD, Math.max(10, (int) Math.round(13 * scale))));
             g.drawString(waveText, (W - g.getFontMetrics().stringWidth(waveText)) / 2,
                     waveY + (waveHeight + g.getFontMetrics().getAscent() - g.getFontMetrics().getDescent()) / 2);
+        }
+        if (level instanceof Level2Park && parkTimeLeft > 0) {
+            String timer = String.format("%d:%02d", (int) parkTimeLeft / 60, (int) parkTimeLeft % 60);
+            g.setColor(new Color(255, 226, 122));
+            g.drawString("Time " + timer, stageX + stagePanelWidth - pad - g.getFontMetrics().stringWidth("Time " + timer),
+                    panelY + (int) Math.round(77 * scale));
         }
         if (level instanceof MarketStage && marketTimeLeft > 0) {
             String timer = String.format("%d:%02d", (int) marketTimeLeft / 60, (int) marketTimeLeft % 60);
@@ -572,6 +654,13 @@ public class GamePanel {
                 g.setColor(new Color(154, 247, 239, flash));
                 g.fillRect(0, 0, width, height);
             }
+        } else if (elapsed >= BOSS_CINEMATIC_DURATION - 0.95) {
+            title = "THE BEACH IS CHANGING";
+            detail = "A surge is breaking through the shoreline...";
+            double flashProgress = (elapsed - (BOSS_CINEMATIC_DURATION - 0.95)) / 0.95;
+            double flashAlpha = flashProgress < 0.32 ? flashProgress / 0.32 : (1 - flashProgress) / 0.68;
+            g.setColor(new Color(255, 255, 255, (int) (255 * Math.max(0, Math.min(1, flashAlpha)))));
+            g.fillRect(0, 0, width, height);
         } else {
             title = "FIVE WAVES. FIVE MINUTES.";
             detail = "Clear every wave to save the beach.";

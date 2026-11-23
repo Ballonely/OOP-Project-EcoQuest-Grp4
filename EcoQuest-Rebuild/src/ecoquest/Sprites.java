@@ -27,7 +27,23 @@ public final class Sprites {
     public static BufferedImage trashIcon(TrashDef d) {
         return CACHE.computeIfAbsent(d.id(), k -> {
             BufferedImage custom = loadCustom(k);
-            return custom != null ? custom : outline(drawIcon(d));
+            if (custom != null) return custom;
+            BufferedImage art = IconArt.get(k);
+            return outline(art != null ? art : drawIcon(d));
+        });
+    }
+
+    private static final Map<String, BufferedImage> WORLD = new HashMap<>();
+
+    /** The same icon at 12x12 for the ground and the bag above the player, smoothed so the art stays readable. */
+    public static BufferedImage trashWorld(TrashDef d) {
+        return WORLD.computeIfAbsent(d.id(), k -> {
+            BufferedImage src = trashIcon(d), out = new BufferedImage(12, 12, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g = out.createGraphics();
+            g.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(src, 0, 0, 12, 12, null);
+            g.dispose();
+            return out;
         });
     }
 
@@ -288,6 +304,11 @@ public final class Sprites {
 
     /** The player: the city cleaner from the Residential level. Feet at (x, y). facing: 0 down, 1 up, 2 left, 3 right. */
     public static void cleaner(Graphics2D g, int x, int y, int facing, int frame, boolean moving, double time) {
+        cleaner(g, x, y, facing, frame, moving, time, false);
+    }
+
+    /** Same, with {@code acting}: shows the grabber pose (row 0, frames 2 and 3 of the sheet) while picking up or sorting. */
+    public static void cleaner(Graphics2D g, int x, int y, int facing, int frame, boolean moving, double time, boolean acting) {
         BufferedImage[][] f = cleanerFrames();
         if (f.length == 0) {
             person(g, x, y, facing, frame, moving, new Color(0x3fa34d), new Color(0x7a9a3a), new Color(0xf0c49a));
@@ -302,7 +323,8 @@ public final class Sprites {
             default -> 1;
         };
         BufferedImage im;
-        if (moving) im = f[row][Math.floorMod(frame, 4)];
+        if (acting) im = f[0][2 + (int) (time * 10) % 2];
+        else if (moving) im = f[row][Math.floorMod(frame, 4)];
         else if (row == 1) im = f[0][(int) (time / 0.65) % 2];
         else im = f[row][0];
         g.drawImage(im, x - 8, y - 15, null);
