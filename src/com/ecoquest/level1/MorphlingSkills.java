@@ -13,24 +13,33 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The Sewage Morphling's two extra skills on the beach (its third is the sewage splash volley,
- * run by {@link GamePanel}). None of them hurt the player:
+ * The Sewage Morphling's two extra skills on the beach (its third is the geyser volley,
+ * run by {@link GamePanel}):
  * <ul>
- *   <li><b>Tide Surge</b> (phase 2, waves 3-4): a foam strip marks a band of the beach, then a wave
- *   rolls in from the sea across it. Caught in it, the player is swept back toward the land and slowed.</li>
- *   <li><b>Sludgelings</b> (phase 3, wave 5): the Morphling spits slime blobs onto the sand that crawl to
+ *   <li><b>Tide Surge</b> (phase 2, from wave 2): three waves in a row: each time a foam strip marks a band of
+ *   the beach where the player is, then a wave rolls in from the sea across it. Caught in it, the player loses 1 life, is swept back toward the land and slowed.</li>
+ *   <li><b>Burrow</b> (every wave): it sinks into the sand and tunnels after the player; being
+ *   under it when it surfaces slows the player (no damage). Moved by {@link GamePanel}.</li>
+ *   <li><b>Sludgelings</b> (phase 3, wave 3): the Morphling spits slime blobs onto the sand that crawl to
  *   the bins. Walk into one to pop it; one that reaches a bin clogs it for a few seconds.</li>
  * </ul>
  */
 final class MorphlingSkills {
     // Tide Surge
-    private static final double SURGE_WARN = 1.3, SURGE_SPEED = 230, SURGE_HALF = 30;
+    private static final double SURGE_WARN = CoastalMorphling.SURGE_CHARGE, SURGE_SPEED = 230, SURGE_HALF = 30;
     private static final double SURGE_EVERY_P2 = 11, SURGE_EVERY_P3 = 9, SURGE_FIRST = 4;
     private static final double SURGE_CARRY = 0.4, SURGE_PUSH = 170, SURGE_SLOW = 2.0;
+    private static final int SURGE_DAMAGE = 1;
+    /** Each Tide Surge cast sends this many waves in a row, each aimed at where the player is then. */
+    private static final int SURGE_COUNT = 3;
+    /** The next wave of a set is called once the previous crest has rolled past this x. */
+    private static final double SURGE_NEXT_AT_X = Config.WORLD_W * 0.45;
     // Sludgelings
     private static final double SLUDGE_EVERY = 13, SLUDGE_FIRST = 3, SLUDGE_SPEED = 18;
     private static final double SLUDGE_FLIGHT = 0.8, SLUDGE_ARC = 34, CLOG_TIME = 6;
     private static final int SLUDGE_PER_CAST = 2, SLUDGE_MAX = 3;
+    // Burrow (every wave): it tunnels to a new spot; the game moves it and checks the slow.
+    private static final double BURROW_FIRST = 6, BURROW_EVERY = 15;
 
     private static final int[] SLIME = {0x3E6B3A, 0x5C8A45, 0x2C4A2C, 0x86B05A};
     private static final int[] FOAM = {0xE8FFF8, 0xBDEFE6, 0x8FD8D2};
@@ -55,28 +64,43 @@ final class MorphlingSkills {
 
     private double time;
     private int phase;
-    private double surgeCooldown, sludgeCooldown;
-    /** When the current surge's warning began (-1 = no surge), and the middle of its band. */
-    private double surgeAt = -1, surgeY;
-    private boolean surgeHit;
+    private double surgeCooldown, sludgeCooldown, burrowCooldown = BURROW_FIRST;
+    /** One wave of a Tide Surge: when its warning began, the middle of its band, and if it hit. */
+    private static final class Surge {
+        final double at, y;
+        boolean hit;
+        Surge(double at, double y) { this.at = at; this.y = y; }
+    }
+    private final List<Surge> surges = new ArrayList<>();
+    /** Waves of the current set still to be called. */
+    private int surgesLeft;
+    /** The surge hurt the player since the last {@link #consumePlayerHit()}. */
+    private boolean playerHit;
     private double carry;
     private final List<Blob> blobs = new ArrayList<>();
     /** Clogged bins and the time each one clears. */
     private final Map<TrashBin, Double> clogs = new HashMap<>();
     private final BossParticles fx = new BossParticles();
     private String message;
+    /** Seconds until the puffed-up Morphling spits its sludgelings (-1 = not winding up). */
+    private double spitIn = -1;
+    /** A skill that just began, for the Morphling's animation (null = none). */
+    private CoastalMorphling.Cast cast;
 
     void reset() {
         time = 0;
         phase = 0;
         surgeCooldown = sludgeCooldown = 0;
-        surgeAt = -1;
-        surgeHit = false;
+        burrowCooldown = BURROW_FIRST;
+        surges.clear();
+        surgesLeft = 0;
         carry = 0;
         blobs.clear();
         clogs.clear();
         fx.clear();
         message = null;
+        spitIn = -1;
+        cast = null;
     }
 
     /** The boss is beaten: blobs burst, bins unclog, the tide stops. */
@@ -84,11 +108,27 @@ final class MorphlingSkills {
         for (Blob b : blobs) pop(b);
         blobs.clear();
         clogs.clear();
-        surgeAt = -1;
+        surges.clear();
+        surgesLeft = 0;
         carry = 0;
+        spitIn = -1;
+        cast = null;
     }
 
     boolean isClogged(TrashBin bin) { return clogs.containsKey(bin); }
+
+    /** The skill that started since the last call, so the Morphling can animate it (or null). */
+    CoastalMorphling.Cast consumeCast() {
+        CoastalMorphling.Cast c = cast;
+        cast = null;
+        return c;
+    }
+
+    boolean consumePlayerHit() {
+        boolean hit = playerHit;
+        playerHit = false;
+        return hit;
+    }
 
     String consumeMessage() {
         String m = message;
@@ -99,17 +139,24 @@ final class MorphlingSkills {
     /**
      * @param phase      1 (splash only), 2 (+ Tide Surge) or 3 (+ Sludgelings)
      * @param mouthX     where blobs are spat from
-     * @param splashBusy a splash volley is being telegraphed, so a new surge waits a moment
+     * @param busy       the Morphling is already busy (a geyser volley or another skill's
+     *                   animation), so a new surge or spit waits a moment
      */
-    void update(double dt, int phase, Player player, Level level, double mouthX, double mouthY, boolean splashBusy) {
+    void update(double dt, int phase, Player player, Level level, double mouthX, double mouthY, boolean busy) {
         time += dt;
         if (phase != this.phase) {               // a new phase: its skill comes soon after
             if (phase >= 2 && this.phase < 2) surgeCooldown = SURGE_FIRST;
             if (phase >= 3 && this.phase < 3) sludgeCooldown = SLUDGE_FIRST;
             this.phase = phase;
         }
-        updateSurge(dt, player, level, splashBusy);
-        updateSludge(dt, player, level, mouthX, mouthY);
+        updateSurge(dt, player, level, busy);
+        updateSludge(dt, player, level, mouthX, mouthY, busy);
+        burrowCooldown -= dt;
+        if (burrowCooldown <= 0 && !busy && cast == null && phase >= 1) {
+            burrowCooldown = BURROW_EVERY;
+            cast = CoastalMorphling.Cast.BURROW;
+            message = "It is tunnelling after you! Move off the ring when it stops!";
+        }
         for (Iterator<Map.Entry<TrashBin, Double>> it = clogs.entrySet().iterator(); it.hasNext(); ) {
             if (time >= it.next().getValue()) it.remove();
         }
@@ -117,53 +164,65 @@ final class MorphlingSkills {
     }
 
     // ------------------------------------------------------------ Tide Surge
-    private void updateSurge(double dt, Player player, Level level, boolean splashBusy) {
+    private void updateSurge(double dt, Player player, Level level, boolean busy) {
         if (carry > 0) {                         // being swept back toward the land
             player.knockBack(-SURGE_PUSH * dt, 0, level);
             carry -= dt;
         }
-        if (surgeAt < 0) {
+        if (surges.isEmpty() && surgesLeft == 0) {          // waiting for the next set
             if (phase < 2) return;
             surgeCooldown -= dt;
-            if (surgeCooldown > 0 || splashBusy) return;
-            surgeAt = time;
-            surgeHit = false;
-            double feet = player.getY() + Player.H - 2;
-            surgeY = clamp(feet + (fx.rng().nextDouble() * 2 - 1) * 14, 44 + SURGE_HALF, Config.WORLD_H - 6 - SURGE_HALF);
-            message = "Tide surge! Step out of the foam line!";
-            return;
+            if (surgeCooldown > 0 || busy) return;
+            surgesLeft = SURGE_COUNT;
         }
-        double since = time - surgeAt;
-        if (since < SURGE_WARN) return;
-        double front = frontX();
-        if (fx.rng().nextDouble() < dt * 40) {   // spray along the crest
-            double y = surgeY + (fx.rng().nextDouble() * 2 - 1) * SURGE_HALF;
-            fx.add(BossParticles.SPARK, front + 2, y, 2, -60 - fx.rng().nextDouble() * 40, 0, 30 + fx.rng().nextDouble() * 40,
-                    0.5, FOAM[fx.rng().nextInt(FOAM.length)], 1);
+        Surge last = surges.isEmpty() ? null : surges.get(surges.size() - 1);
+        if (surgesLeft > 0 && !busy && (last == null || frontX(last) < SURGE_NEXT_AT_X)) {
+            double feet = player.getY() + Player.H - 2;
+            double y = clamp(feet + (fx.rng().nextDouble() * 2 - 1) * 14, 44 + SURGE_HALF, Config.WORLD_H - 6 - SURGE_HALF);
+            surges.add(new Surge(time, y));
+            int number = SURGE_COUNT - surgesLeft + 1;
+            surgesLeft--;
+            cast = CoastalMorphling.Cast.SURGE;
+            message = "Tide surge " + number + "/" + SURGE_COUNT + "! Step out of the foam line!";
         }
         double feet = player.getY() + Player.H - 2, px = player.centerX();
-        if (!surgeHit && !player.isOnBoat() && Math.abs(feet - surgeY) <= SURGE_HALF
-                && front <= px + 4 && front >= px - 40) {
-            surgeHit = true;
-            carry = SURGE_CARRY;
-            player.applySlow(SURGE_SLOW);
-            fx.burst(BossParticles.SPARK, px, feet, 4, 10, 50, 50, 0.6, FOAM);
-            message = "The tide surge swept you back!";
+        for (Iterator<Surge> it = surges.iterator(); it.hasNext(); ) {
+            Surge surge = it.next();
+            if (time - surge.at < SURGE_WARN) continue;
+            double front = frontX(surge);
+            if (fx.rng().nextDouble() < dt * 40) {   // spray along the crest
+                double y = surge.y + (fx.rng().nextDouble() * 2 - 1) * SURGE_HALF;
+                fx.add(BossParticles.SPARK, front + 2, y, 2, -60 - fx.rng().nextDouble() * 40, 0, 30 + fx.rng().nextDouble() * 40,
+                        0.5, FOAM[fx.rng().nextInt(FOAM.length)], 1);
+            }
+            if (!surge.hit && !player.isOnBoat() && Math.abs(feet - surge.y) <= SURGE_HALF
+                    && front <= px + 4 && front >= px - 40) {
+                surge.hit = true;
+                carry = SURGE_CARRY;
+                player.applySlow(SURGE_SLOW);
+                player.hurt(SURGE_DAMAGE);
+                playerHit = true;
+                fx.burst(BossParticles.SPARK, px, feet, 4, 10, 50, 50, 0.6, FOAM);
+                message = "The tide surge hit you! -1 life";
+            }
+            if (front < -70) it.remove();
         }
-        if (front < -70) {
-            surgeAt = -1;
+        if (surges.isEmpty() && surgesLeft == 0 && last != null)   // the set is over
             surgeCooldown = phase >= 3 ? SURGE_EVERY_P3 : SURGE_EVERY_P2;
-        }
     }
 
-    private double frontX() { return Config.WORLD_W + 10 - (time - surgeAt - SURGE_WARN) * SURGE_SPEED; }
+    private double frontX(Surge surge) { return Config.WORLD_W + 10 - (time - surge.at - SURGE_WARN) * SURGE_SPEED; }
 
     // ------------------------------------------------------------ Sludgelings
-    private void updateSludge(double dt, Player player, Level level, double mouthX, double mouthY) {
+    private void updateSludge(double dt, Player player, Level level, double mouthX, double mouthY, boolean busy) {
         if (phase >= 3) {
             sludgeCooldown -= dt;
-            if (sludgeCooldown <= 0 && blobs.size() < SLUDGE_MAX) {
+            if (spitIn < 0 && sludgeCooldown <= 0 && blobs.size() < SLUDGE_MAX && !busy) {
                 sludgeCooldown = SLUDGE_EVERY;
+                spitIn = CoastalMorphling.SPIT_WINDUP;   // it puffs up first, then spits
+                cast = CoastalMorphling.Cast.SPIT;
+            }
+            if (spitIn >= 0 && (spitIn -= dt) < 0) {
                 int spat = 0;
                 for (int i = 0; i < SLUDGE_PER_CAST && blobs.size() < SLUDGE_MAX; i++) {
                     TrashBin bin = pickBin(level);
@@ -248,14 +307,14 @@ final class MorphlingSkills {
         gg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
         for (Map.Entry<TrashBin, Double> clog : clogs.entrySet()) drawClog(gg, clog.getKey(), clog.getValue() - time);
         for (Blob b : blobs) drawBlob(gg, b);
-        if (surgeAt >= 0) drawSurge(gg);
+        for (Surge surge : surges) drawSurge(gg, surge);
         fx.draw(gg);
         gg.dispose();
     }
 
-    private void drawSurge(Graphics2D g) {
-        double since = time - surgeAt;
-        int top = (int) Math.round(surgeY - SURGE_HALF), height = (int) Math.round(SURGE_HALF * 2);
+    private void drawSurge(Graphics2D g, Surge surge) {
+        double since = time - surge.at;
+        int top = (int) Math.round(surge.y - SURGE_HALF), height = (int) Math.round(SURGE_HALF * 2);
         if (since < SURGE_WARN) {                // the foam line: where the wave will roll through
             double pulse = 0.5 + 0.5 * Math.sin(since * 14);
             double in = Math.min(1, since / 0.25);
@@ -285,7 +344,7 @@ final class MorphlingSkills {
             g.drawString(warn, Config.WORLD_W - tw - 10, top - 3);
             return;
         }
-        double front = frontX();
+        double front = frontX(surge);
         int fx0 = (int) Math.round(front);
         for (int i = 0; i < 12; i++) {           // the water body, thinning out behind the crest
             int x0 = fx0 + 4 + i * 9;

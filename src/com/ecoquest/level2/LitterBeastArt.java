@@ -58,6 +58,8 @@ final class LitterBeastArt {
         int eyes;              // 0 open, 1 closed, 2 rage, 3 dizzy
         double glow = 0.6;
         double deflate, legsFold, bloom;
+        /** Spine bottles, back to front: length 0 (fired, regrowing) .. 1 (full) each. */
+        final double[] spikes = {1, 1, 1, 1, 1};
         boolean flies = true, stink = true;
     }
 
@@ -215,8 +217,10 @@ final class LitterBeastArt {
     /** Plastic bottles stuck in the spine like spikes; they wobble a beat behind the body. */
     private static void bottles(PixelCanvas c, Pose p, double hx, double hy, double hRx, double hRy,
                                 double cx, double cy, double cRx, double cRy, double cyc) {
-        double[][] spots = {{0, 4.35}, {0, 4.95}, {1, 4.45}, {1, 5.05}};
+        double[][] spots = {{0, 3.9}, {0, 4.35}, {0, 4.95}, {1, 4.45}, {1, 5.05}};
         for (int i = 0; i < spots.length; i++) {
+            double grow = p.spikes[i];
+            if (grow < 0.12) continue;              // shot off, still sprouting back
             boolean front = spots[i][0] == 1;
             double ang = spots[i][1];
             double bcx = front ? cx : hx, bcy = front ? cy : hy, brx = front ? cRx : hRx, bry = front ? cRy : hRy;
@@ -225,7 +229,7 @@ final class LitterBeastArt {
                     + Math.sin(cyc * 2 - 1.1 - i * 0.5) * 0.14 * p.walkAmt
                     - p.rear * 0.25 + p.crouch * 0.15 + Math.sin(p.t * 40) * 0.05 * Math.min(1, Math.abs(p.shake));
             double dir = ang - 0.35 + wob + p.deflate * 1.3 * (i % 2 == 0 ? 1 : -1);
-            double len = (i % 2 == 0 ? 7.5 : 6.2) * (1 - p.deflate * 0.4);
+            double len = (i % 2 == 0 ? 7.5 : 6.2) * (1 - p.deflate * 0.4) * grow;
             double ex = sx + Math.cos(dir) * len, ey = sy + Math.sin(dir) * len;
             double nx = sx + Math.cos(dir) * len * 0.6, ny = sy + Math.sin(dir) * len * 0.6;
             c.capsule(sx, sy, nx, ny, 2.1, BOTTLE_OUT);

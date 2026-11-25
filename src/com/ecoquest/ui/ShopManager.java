@@ -415,6 +415,8 @@ public class ShopManager {
         double scale = Math.min((double) width / DESIGN_WIDTH, (double) height / DESIGN_HEIGHT);
         int drawWidth = (int) Math.round(DESIGN_WIDTH * scale);
         int drawHeight = (int) Math.round(DESIGN_HEIGHT * scale);
+        g.setColor(PARCHMENT);                  // a wide window: parchment fills the sides too
+        g.fillRect(0, 0, width, height);
         Graphics2D shop = (Graphics2D) g.create();
         shop.translate((width - drawWidth) / 2, (height - drawHeight) / 2);
         shop.scale(scale, scale);

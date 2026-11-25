@@ -403,7 +403,8 @@ public final class Level3Market extends Level {
      * <ul>
      *   <li><b>Rotten produce barrage</b>: flings 2 / 3 / 4 (by phase) rotten tomatoes, fish, mangoes
      *       and cabbages off its fork at marked spots. A hit does no damage and leaves no litter; it
-     *       only slows you.</li>
+     *       only slows you. Each one leaves a {@link RottenPile} that slows anyone walking through it
+     *       for {@value RottenPile#LIFETIME} s.</li>
      *   <li><b>Fork shockwave</b> (on every wrong sort, and every {@value #SHOCK_EVERY} s from phase 2):
      *       slams its fork and a shockwave ring spreads {@value #SHOCK_RADIUS} px. It does no damage
      *       but stuns you if it catches you.</li>
@@ -412,6 +413,9 @@ public final class Level3Market extends Level {
      *   <li><b>Royal warp + crown boomerang</b> (phase 3): sinks into its heap, rises again right
      *       next to you and hurls its crown, which curves out past you and back (1 HP on a hit); the
      *       king stays bald and furious until it returns, then warps back to its throne.</li>
+     *   <li><b>Poison smoke</b> (after each warp next to you): a cloud of toxic fumes billows up
+     *       around the spot where it rose ({@value #SMOKE_RADIUS} px). It swells for
+     *       {@value #SMOKE_GROW} s, then slows you (no damage) while you stand in it, until it clears.</li>
      * </ul>
      * Every point of damage makes it flinch, flash and lose a chunk of rubbish as it springs down a
      * size (its size follows its HP). At 0 HP its crown flies off, it deflates into the heap,
@@ -427,6 +431,12 @@ public final class Level3Market extends Level {
         private static final double CROWN_SCALE = 1.45, CROWN_HIT = 13;
         /** Royal warp: seconds to sink into the heap, and to rise again somewhere else. */
         private static final double WARP_SINK = 0.45, WARP_RISE = 0.55;
+        /** Poison smoke after a warp: radius (px), swell time (harmless), seconds between slow refreshes. */
+        static final double SMOKE_RADIUS = 60, SMOKE_GROW = 0.7, SMOKE_TICK = 0.5;
+        private static final double SMOKE_TIME = 5.0, SMOKE_SLOW = 1.2;
+        /** Rotten produce in flight: landing x, y, seconds until it lands, kind (each leaves a slowing pile). */
+        private final List<double[]> pendingPiles = new ArrayList<>();
+        private final int[] smokeCols = {0x8FBF4A, 0x6FA03A, 0xA88AC8, 0x7E9A50};
         private final int[] produceKinds = {BossCore.TOMATO, BossCore.FISH, BossCore.MANGO, BossCore.CABBAGE};
 
         /** Its own clock (shadows the market's), so it can rise during the intro while the market is frozen. */
@@ -458,6 +468,9 @@ public final class Level3Market extends Level {
         // royal warp: started at (-99 = none), where to, and whether it is the trip back
         private double warpAt = -99, warpX, warpY;
         private boolean warpBack, warpMoved, crownAfterWarp;
+        // poison smoke (-1 = none): age, where it hangs, seconds until it slows again, toast shown yet
+        private double smokeAge = -1, smokeX, smokeY, smokeHurt;
+        private boolean smokeWarned;
         // crown boomerang (-1 = on its head)
         private double crownThrowAt = -99, crownAge = -1, cbX, cbY, cbZ;
         private double cbSX, cbSY, cbTX, cbTY, cbCX, cbCY, cbC2X, cbC2Y;
@@ -508,7 +521,7 @@ public final class Level3Market extends Level {
         }
         @Override public String phaseMessage(int phase) {
             return phase == 2 ? "PHASE 2: The Waste King summons can soldiers and slams the ground - keep your distance!"
-                    : "PHASE 3: ENRAGED! The Waste King warps next to you and hurls its crown - finish it!";
+                    : "PHASE 3: ENRAGED! The Waste King warps next to you in poison smoke and hurls its crown - finish it!";
         }
         @Override public String defeatMessage() { return "The market is clean - the Waste King is defeated!"; }
         @Override public Intro intro() {
@@ -594,6 +607,8 @@ public final class Level3Market extends Level {
             shockAge = -1;
             warpAt = -99;                           // falls wherever it stands
             crownAfterWarp = false;
+            smokeAge = -1;
+            pendingPiles.clear();
             for (CanSoldier s : soldiers) s.poof();
         }
 
@@ -626,6 +641,8 @@ public final class Level3Market extends Level {
                 return;
             }
             updateShockwave(dt);
+            updateSmoke(dt);
+            updatePiles(dt);
             updateWarp();
             updateCrown(dt);
             if (isEmerging()) return;
@@ -697,7 +714,22 @@ public final class Level3Market extends Level {
                 double ox = i == 0 ? 0 : r.nextGaussian() * 24, oy = i == 0 ? 0 : r.nextGaussian() * 14;
                 double[] t = core.leadTarget(target, 0.55, ox, oy);
                 Strike splat = new Strike(0, 0, 13, false, PRODUCE_SLOW, 0, 0, "Splat! Rotten produce - you're slowed!");
-                core.throwAt(sx, sy, t[0], t[1], 1.0 + i * 0.14, 34 + i * 6, produceKinds[r.nextInt(produceKinds.length)], splat);
+                double flight = 1.0 + i * 0.14;
+                int kind = produceKinds[r.nextInt(produceKinds.length)];
+                core.throwAt(sx, sy, t[0], t[1], flight, 34 + i * 6, kind, splat);
+                pendingPiles.add(new double[] { t[0], t[1], flight, kind });
+            }
+        }
+
+        /** Each piece of rotten produce leaves a slowing pile where it lands. */
+        private void updatePiles(double dt) {
+            for (java.util.Iterator<double[]> it = pendingPiles.iterator(); it.hasNext(); ) {
+                double[] p = it.next();
+                p[2] -= dt;
+                if (p[2] <= 0) {
+                    addTemporaryProp(new RottenPile(p[0], p[1], (int) p[3]));
+                    it.remove();
+                }
             }
         }
 
@@ -801,10 +833,80 @@ public final class Level3Market extends Level {
             if (warpMoved && t >= WARP_SINK + WARP_RISE) {
                 warpAt = -99;
                 if (!warpBack) {
+                    startSmoke();
                     crownAfterWarp = true;
                     startCrownThrow();
                 }
             }
+        }
+
+        // ---- poison smoke
+        /** Toxic fumes billow up around the heap where it just rose. */
+        private void startSmoke() {
+            smokeAge = 0;
+            smokeX = baseX();
+            smokeY = baseY() - 2;
+            smokeHurt = 0;
+            smokeWarned = false;
+        }
+
+        /** Harmless while it swells, then keeps the player slowed while their feet are inside (no damage). */
+        private void updateSmoke(double dt) {
+            if (smokeAge < 0) return;
+            smokeAge += dt;
+            smokeHurt = Math.max(0, smokeHurt - dt);
+            double fade = smokeFade();
+            java.util.Random r = fx.rng();
+            if (r.nextDouble() < dt * 18 * fade) {   // fumes curling up inside the cloud
+                double a = r.nextDouble() * Math.PI * 2, d = Math.sqrt(r.nextDouble()) * SMOKE_RADIUS * smokeSize();
+                fx.add(BossParticles.PUFF, smokeX + Math.cos(a) * d, smokeY + Math.sin(a) * d * 0.5, 2 + r.nextDouble() * 6,
+                        r.nextGaussian() * 4, 0, 6 + r.nextDouble() * 6, 1.1, smokeCols[r.nextInt(smokeCols.length)], 3);
+            }
+            if (smokeAge >= SMOKE_GROW && smokeHurt <= 0 && smokeAge < SMOKE_TIME - 0.4) {
+                double px = target.centerX(), py = target.getY() + Player.H - 3;
+                double d = Math.hypot(px - smokeX, (py - smokeY) * 2);   // the cloud is a flat ellipse
+                if (d <= SMOKE_RADIUS) {
+                    smokeHurt = SMOKE_TICK;
+                    if (smokeWarned) target.applySlow(SMOKE_SLOW);   // quiet refresh, no toast spam
+                    else {
+                        smokeWarned = true;
+                        core.strike(new Strike(px, py, 4, false, SMOKE_SLOW, 0, 0, "Poison smoke! You're slowed!"));
+                    }
+                }
+            }
+            if (smokeAge >= SMOKE_TIME) smokeAge = -1;
+        }
+
+        /** 0..1: swells in, then thins out over the last second. */
+        private double smokeSize() { return PixelCanvas.easeOut(Math.min(1, smokeAge / SMOKE_GROW)); }
+        private double smokeFade() { return 1 - PixelCanvas.span(smokeAge, SMOKE_TIME - 1.0, SMOKE_TIME); }
+
+        /** The cloud: billowing green-purple puffs inside a dashed edge that shows exactly how far it reaches. */
+        private void drawSmoke(Graphics2D g) {
+            if (smokeAge < 0) return;
+            Graphics2D gg = (Graphics2D) g.create();
+            gg.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+            double size = smokeSize(), fade = smokeFade();
+            boolean armed = smokeAge >= SMOKE_GROW;
+            double R = SMOKE_RADIUS * size;
+            int cx = (int) Math.round(smokeX), cy = (int) Math.round(smokeY);
+            gg.setColor(new Color(110, 160, 60, (int) (55 * fade)));
+            gg.fillOval((int) Math.round(cx - R), (int) Math.round(cy - R / 2), (int) Math.round(R * 2), (int) Math.round(R));
+            for (int i = 0; i < 9; i++) {           // slow-swirling puffs
+                double a = i * Math.PI * 2 / 9 + time * (i % 2 == 0 ? 0.6 : -0.45);
+                double d = R * (0.35 + 0.4 * ((i * 37) % 10) / 10.0);
+                double pr = R * (0.32 + 0.08 * Math.sin(time * 2 + i));
+                double px = cx + Math.cos(a) * d, py = cy + Math.sin(a) * d * 0.5 - 6 - 3 * Math.sin(time * 1.5 + i);
+                int col = smokeCols[i % smokeCols.length];
+                gg.setColor(new Color((col >> 16) & 0xFF, (col >> 8) & 0xFF, col & 0xFF, (int) (70 * fade)));
+                gg.fillOval((int) Math.round(px - pr), (int) Math.round(py - pr * 0.6), (int) Math.round(pr * 2), (int) Math.round(pr * 1.2));
+            }
+            double pulse = 0.6 + 0.4 * Math.sin(time * (armed ? 10 : 20));
+            gg.setStroke(new java.awt.BasicStroke(1.3f, java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND,
+                    1f, new float[] { 4f, 3f }, (float) (time * 8)));
+            gg.setColor(armed ? new Color(150, 220, 70, (int) (200 * fade * pulse)) : new Color(255, 190, 60, (int) (200 * pulse)));
+            gg.drawOval((int) Math.round(cx - R), (int) Math.round(cy - R / 2), (int) Math.round(R * 2), (int) Math.round(R));
+            gg.dispose();
         }
 
         /** Re-enables the heap's solid body once it stands and the player is not inside it. */
@@ -1149,6 +1251,7 @@ public final class Level3Market extends Level {
                 gg.drawOval(cx - r, cy - r / 2, r * 2, r);
                 gg.dispose();
             }
+            drawSmoke(g);
             if (defeatAt < 0) drawCrownPath(g);
             if (crownOut()) drawCrown(g, cbX, cbY, cbZ, time * 9, 1, CROWN_SCALE);
             core.drawEffects(g, baseX(), baseY() - 62 * size);

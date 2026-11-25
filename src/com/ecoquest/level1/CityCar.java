@@ -43,6 +43,11 @@ public final class CityCar extends Entity {
     private final Roundabout roundabout;
     private final double arcStart, arcEnd;
     private double distance, speed, heading, cx, cy;
+    /** Multiplies the cruise speed (the Level 5 boss's rush hour speeds traffic up). */
+    private double speedScale = 1;
+    /** Seconds since the Level 5 boss smashed it (-1 = driving), and how it flies off. */
+    private double wreckTime = -1, flyVX, flyVY, spinRate;
+    private static final double WRECK_FLY = 0.8, WRECK_RESPAWN = 6;
 
     /**
      * @param arcStartIndex index of the route point where the car enters the roundabout
@@ -70,6 +75,10 @@ public final class CityCar extends Entity {
     private final double[] pose = new double[3];
 
     public void update(double dt, List<CityCar> traffic) {
+        if (wreckTime >= 0) {
+            updateWreck(dt, traffic);
+            return;
+        }
         double stopLine = arcStart - STOP_GAP;
         boolean holding = roundabout.occupant == this;
 
@@ -86,7 +95,7 @@ public final class CityCar extends Entity {
         }
         boolean mustWait = approaching && !holding;
 
-        double target = mustWait ? 0 : cruiseSpeed;
+        double target = mustWait ? 0 : cruiseSpeed * speedScale;
         if (speed < target) speed = Math.min(target, speed + ACCELERATION * dt);
         else speed = Math.max(target, speed - ACCELERATION * 3 * dt);
 
@@ -100,7 +109,7 @@ public final class CityCar extends Entity {
         // Only move if the new position keeps clear of every other car.
         place(next);
         for (CityCar other : traffic) {
-            if (other != this && bodiesTouch(pose[0], pose[1], pose[2], other)) {
+            if (other != this && !other.isWrecked() && bodiesTouch(pose[0], pose[1], pose[2], other)) {
                 speed = 0;
                 return;
             }
@@ -129,6 +138,44 @@ public final class CityCar extends Entity {
         return true;
     }
 
+    /** 0 stops the car where it is (the boss's traffic jam). */
+    public void setSpeedScale(double scale) { speedScale = Math.max(0, scale); }
+
+    public boolean isWrecked() { return wreckTime >= 0; }
+
+    /** The Level 5 boss plowed into it: it flies off spinning, then re-enters at its route start later. */
+    public void wreck(double pushX, double pushY) {
+        if (isWrecked()) return;
+        wreckTime = 0;
+        flyVX = pushX;
+        flyVY = pushY;
+        spinRate = (pushX + pushY >= 0 ? 1 : -1) * 11;
+        if (roundabout.occupant == this) roundabout.occupant = null;
+    }
+
+    private void updateWreck(double dt, List<CityCar> traffic) {
+        wreckTime += dt;
+        if (wreckTime < WRECK_FLY) {
+            cx += flyVX * dt;
+            cy += flyVY * dt;
+            heading += spinRate * dt;
+            double drag = Math.pow(0.15, dt);
+            flyVX *= drag;
+            flyVY *= drag;
+            syncBox();
+            return;
+        }
+        if (wreckTime < WRECK_RESPAWN) return;
+        place(0);                                   // back in from the start, once that spot is clear
+        for (CityCar other : traffic)
+            if (other != this && !other.isWrecked() && bodiesTouch(pose[0], pose[1], pose[2], other)) return;
+        wreckTime = -1;
+        distance = 0;
+        speed = 0;
+        cx = pose[0]; cy = pose[1]; heading = pose[2];
+        syncBox();
+    }
+
     /** True when two cars' bodies overlap right now (used by tests). */
     public boolean touching(CityCar other) {
         return bodiesTouch(cx, cy, heading, other);
@@ -136,6 +183,7 @@ public final class CityCar extends Entity {
 
     /** True when a point (the player's feet) touches the car body. */
     public boolean hits(double px, double py, double margin) {
+        if (isWrecked()) return false;
         double dx = px - cx, dy = py - cy;
         double along = dx * Math.cos(heading) + dy * Math.sin(heading);
         double across = -dx * Math.sin(heading) + dy * Math.cos(heading);
@@ -164,7 +212,12 @@ public final class CityCar extends Entity {
 
     @Override
     public void draw(Graphics2D g) {
+        if (wreckTime >= WRECK_FLY) return;         // gone until it respawns
         Graphics2D carGraphics = (Graphics2D) g.create();
+        if (wreckTime >= 0) {                       // flung away: fades as it tumbles off
+            float alpha = (float) Math.max(0, 1 - wreckTime / WRECK_FLY);
+            carGraphics.setComposite(java.awt.AlphaComposite.getInstance(java.awt.AlphaComposite.SRC_OVER, alpha));
+        }
         carGraphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                 RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         carGraphics.translate(cx, cy);

@@ -14,6 +14,8 @@ import javax.imageio.ImageIO;
  * bins stand on the bins painted in front of the recycling center. Cars drive the roads
  * (see {@link CityCar}) and cost the player 1 HP on contact.
  * All litter in this level uses the city-only items (Garbage variants 2-5).
+ * At 75% clean the Gridlock Golem (see {@link GridlockGolem}) climbs out of a pothole on the main
+ * street; its life is the trash left, like every level boss.
  */
 public final class Level5City extends Level {
     private static final int LITTER_COUNT = 56;
@@ -83,8 +85,68 @@ public final class Level5City extends Level {
     @Override public String getName() { return "Level 5: City Center"; }
 
     @Override public String introMessage() {
-        return "The city center is buried in litter! Sort it at the bins by the recycling center. Watch out for cars!";
+        return "The city center is buried in litter! Sort it at the bins by the recycling center. Watch out for cars... and the rumbling under the road!";
     }
+    @Override public String clearMessage() { return "Gridlock Golem defeated! The city center is clean!"; }
+
+    // ----- boss: the Gridlock Golem -----
+    /** Potholes on the main street (world feet points) the golem can climb out of. */
+    private static final double[][] BOSS_POTHOLES = { {200, 150}, {468, 150}, {50, 167} };
+    private static final int BOSS_REWARD = 200, SPOTLESS_BONUS = 50;
+
+    @Override public boolean hasTrashBoss() { return true; }
+    @Override public boolean allowsTrashMonster() { return false; }
+    /** Gridlock Golem +200, and +50 more for a spotless city. */
+    @Override public int clearBonus() { return BOSS_REWARD + (cleanliness() >= 95 ? SPOTLESS_BONUS : 0); }
+
+    /**
+     * The golem climbs out of the pothole farthest from the player. Waits (returns null) while the
+     * player stands right on it.
+     */
+    @Override public TrashBoss createTrashBoss(Player player) {
+        double px = player.centerX(), py = player.getY() + Player.H;
+        double[] best = BOSS_POTHOLES[0];
+        for (double[] spot : BOSS_POTHOLES)
+            if (Math.hypot(spot[0] - px, spot[1] - py) > Math.hypot(best[0] - px, best[1] - py)) best = spot;
+        if (Math.hypot(best[0] - px, best[1] - py) < 28) return null;
+        return new GridlockGolem(best[0], best[1]);
+    }
+
+    private boolean rushHour, trafficJam;
+
+    /** Phase 3 of the boss fight: every car drives faster. Restarting the level resets the traffic. */
+    public void setRushHour(boolean on) {
+        rushHour = on;
+        applyTrafficSpeed();
+    }
+
+    /** The boss's traffic jam: every car on the map stops where it is until the jam clears. */
+    public void setTrafficJam(boolean on) {
+        trafficJam = on;
+        applyTrafficSpeed();
+    }
+
+    private void applyTrafficSpeed() {
+        for (CityCar car : cars) car.setSpeedScale(trafficJam ? 0 : rushHour ? 1.6 : 1);
+    }
+
+    /**
+     * The boss charging through (x, y): every car within {@code radius} is smashed and flung along
+     * (dirX, dirY). Returns how many were hit.
+     */
+    public int wreckCarsNear(double x, double y, double radius, double dirX, double dirY) {
+        int hit = 0;
+        for (CityCar car : cars) {
+            if (car.isWrecked() || Math.hypot(car.centerX() - x, car.centerY() - y) > radius) continue;
+            double side = (car.centerX() - x) * -dirY + (car.centerY() - y) * dirX >= 0 ? 1 : -1;
+            car.wreck(dirX * 140 - dirY * side * 90, dirY * 140 + dirX * side * 90);
+            hit++;
+        }
+        return hit;
+    }
+
+    /** One of the city car sprites (east-facing, 4 image px per world px), for the boss's jam cars. */
+    public BufferedImage carSprite(int index) { return carSprites[Math.floorMod(index, carSprites.length)]; }
 
     @Override protected void buildTerrain() { spawnCol = 16; spawnRow = 9; }
 
@@ -105,6 +167,7 @@ public final class Level5City extends Level {
      */
     private void spawnTraffic() {
         cars.clear();
+        rushHour = trafficJam = false;
         roundabout.clear();
         hurtCooldown = 0;
         double[][] east = route(new double[][] {{-40, EAST_LANE_Y}}, 160, 20, new double[][] {{560, EAST_LANE_Y}});

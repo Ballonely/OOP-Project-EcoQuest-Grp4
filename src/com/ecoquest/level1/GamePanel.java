@@ -29,7 +29,7 @@ public class GamePanel {
     private static final double BOSS_SPLASH_PHASE = 2.35;
     private static final double BOSS_ZOOM_OUT_PHASE = 1.2;
     private static final double BOSS_CINEMATIC_DURATION = 7.45;
-    private static final int BOSS_WAVES = 5;
+    private static final int BOSS_WAVES = 3;
     private static final double BOSS_TIME_LIMIT = 300;
     private static final double BOSS_ATTACK_INTERVAL = 5.5;
     private static final double BOSS_VICTORY_DURATION = 2.4;
@@ -42,8 +42,16 @@ public class GamePanel {
     private Garbage nearGarbage;
     private TrashBin nearBin;
     private final CoastalMorphling morphling = new CoastalMorphling();
-    /** The Morphling's Tide Surge (waves 3+) and Sludgelings (wave 5); its splash volley lives here. */
+    /** The Morphling's Tide Surge (waves 2-3) and Sludgelings (wave 3); its geyser volley lives here. */
     private final MorphlingSkills morphlingSkills = new MorphlingSkills();
+    /** In-game menu (guide + settings), opened by the HUD menu button or Esc. */
+    private final PauseMenu menu = new PauseMenu();
+    private final Rectangle menuButton = new Rectangle();
+    private boolean quitRequested;
+    private int viewW = com.ecoquest.util.Constants.WINDOW_WIDTH, viewH = com.ecoquest.util.Constants.WINDOW_HEIGHT;
+    private InputHandler lastInput;
+    /** Bottom of the stats card, so the developer panel can sit under it. */
+    private int statsBottom = 70;
 
     // level bosses with the Level 1 rules (Trash Monster, Litter Beast, Waste King): life = trash left
     private static final double STREET_BOSS_HIT_COOLDOWN = 1.6;
@@ -128,6 +136,13 @@ public class GamePanel {
     }
 
     public boolean isFinished() { return cleared || gameOver; }
+
+    /** True once after the player picks "Main menu" in the in-game menu. */
+    public boolean consumeQuitRequest() {
+        boolean quit = quitRequested;
+        quitRequested = false;
+        return quit;
+    }
     public boolean didWin() { return cleared; }
     public int getScore() { return player.getScore(); }
     public int getMoney() { return player.getMoney(); }
@@ -184,15 +199,36 @@ public class GamePanel {
         bossWarningTime = bossTimeLeft = bossVictoryTime = bossAttackCooldown = bossAttackAnimation = 0;
         bossAttackTargets.clear();
         morphlingSkills.reset();
+        morphling.reset();
         timeLeft = level.timeLimit();
         timedOut = false;
         stageTime = 0;
         String intro = level.introMessage();
-        showToast(intro.isBlank() ? "Clean the street! Sort litter into the matching bins." : intro, 4);
+        showToast(intro.isBlank() ? "Clean up! Sort the litter into the matching bins." : intro, 4);
     }
 
     // ------------------------------------------------------------ update
     public void updateFrame(double dt, InputHandler input) {
+        lastInput = input;
+        Point click = input.consumeMouseClick();
+        if (!cleared && !gameOver) {
+            if (!menu.isOpen() && (input.isKeyJustPressed(KeyEvent.VK_ESCAPE)
+                    || (click != null && menuButton.contains(click)))) {
+                menu.open();
+                return;
+            }
+            if (menu.isOpen()) {                    // the level is frozen while the menu is open
+                switch (menu.update(dt, input, click, viewW, viewH)) {
+                    case RESTART -> {
+                        startLevel();
+                        if (devAutoBoss) devSkipToBoss();
+                    }
+                    case QUIT -> quitRequested = true;
+                    default -> { }
+                }
+                return;
+            }
+        }
         stageTime += dt;
         toastTime = Math.max(0, toastTime - dt);
         shakeTime = Math.max(0, shakeTime - dt);
@@ -231,7 +267,11 @@ public class GamePanel {
             }
         }
         level.updateTemporaryProps(dt);
-        if (level.applyTemporaryEffects(player)) showToast("Sewage splash! Stunned and slowed.", 1.8);
+        if (level.applyTemporaryEffects(player)) {
+            SoundFx.play(Sound.BOSS_SPLAT);
+            addShake(0.2, 1.5);
+            showToast("A geyser launched you! Stunned.", 1.8);
+        }
         if (showBossWarning) {          // intro cinematic: the world is frozen
             updateCoastalBoss(dt);
             return;
@@ -382,15 +422,53 @@ public class GamePanel {
             return;
         }
         if (morphling.touches(player.centerX(), player.centerY(), stageTime, 30)) player.applySlow(6);
-        // phase 1 = waves 1-2 (splash only), phase 2 = waves 3-4 (+ tide surge), phase 3 = wave 5 (+ sludgelings)
-        int morphPhase = bossWave >= BOSS_WAVES ? 3 : bossWave >= 3 ? 2 : 1;
-        morphlingSkills.update(dt, morphPhase, player, level, morphling.x(stageTime) + 42,
-                morphling.y(stageTime) + 17, bossAttackAnimation > 0);
+        morphling.update(dt, stageTime);
+        double morphShake = morphling.consumeShake();
+        if (morphShake > 0) addShake(0.35, morphShake);
+        if (morphling.consumeEmerged()) {                 // burst out of the sand: slows, no damage
+            double ex = morphling.emergeX(), ey = morphling.emergeY();
+            ((Level4Beach) level).setBossSpot(ex, ey - 30);
+            double dx = (player.centerX() - ex) / 32, dy = (player.getY() + Player.H - 2 - ey) / 20;
+            if (!player.isOnBoat() && dx * dx + dy * dy <= 1) {
+                player.applyHeavySlow(4.5);                // crawl at a quarter speed
+                SoundFx.play(Sound.BOSS_SPLAT);
+                showToast("The Morphling burst out under you! Heavily slowed.", 2);
+            }
+        }
+        // Each wave adds a skill: wave 1 = geysers, wave 2 = + tide surge, wave 3 = + sludgelings
+        int morphPhase = Math.max(1, Math.min(3, bossWave));
+        // One skill at a time, so every attack gets its own wind-up animation.
+        morphlingSkills.update(dt, morphPhase, player, level, morphling.mouthX(stageTime),
+                morphling.mouthY(stageTime), bossAttackAnimation > 0 || morphling.isCasting());
+        CoastalMorphling.Cast skillCast = morphlingSkills.consumeCast();
+        Level4Beach beachLevel = (Level4Beach) level;
+        double feetY = player.getY() + Player.H - 2;
+        if (skillCast == CoastalMorphling.Cast.BURROW) {   // tunnels straight at the player
+            double[] spot = beachLevel.burrowSpotAt(player.centerX(), feetY);
+            if (spot == null) spot = beachLevel.getBurrowTarget(player.centerX(), feetY,
+                    morphling.x(stageTime), morphling.y(stageTime));
+            morphling.startBurrow(spot[0], spot[1]);
+        } else if (skillCast != null) morphling.startCast(skillCast);
+        if (morphling.isTrackingTarget()) {               // keeps homing in until the ring locks
+            double[] spot = beachLevel.burrowSpotAt(player.centerX(), feetY);
+            if (spot != null) morphling.retarget(spot[0], spot[1]);
+        }
         String skillNote = morphlingSkills.consumeMessage();
         if (skillNote != null) showToast(skillNote, 2);
+        if (morphlingSkills.consumePlayerHit()) {          // the tide surge hits for 1 life
+            SoundFx.play(Sound.BOSS_SMACK);
+            player.flashRed();
+            addShake(0.3, 2.5);
+            if (player.isDead()) {
+                gameOver = true;
+                showToast("Player health depleted!", 3);
+                return;
+            }
+        }
         bossAttackCooldown -= dt;
-        if (bossAttackCooldown <= 0) {
+        if (bossAttackCooldown <= 0 && !morphling.isCasting()) {
             Level4Beach beach = (Level4Beach) level;
+            morphling.startCast(CoastalMorphling.Cast.SPLASH);
             bossAttackTargets.clear();
             bossAttackTargets.addAll(beach.getBossAttackPattern(bossAttackPattern++));
             for (double[] target : bossAttackTargets) level.addTemporaryProp(new WaterImpact(target[0], target[1]));
@@ -416,10 +494,11 @@ public class GamePanel {
             added += beach.scatterBossWaveTrash(waveCount - added);
         bossWave++;
         bossWaveRemaining = added;
-        String skill = bossWave == 3 ? "  It now calls the TIDE - get out of the foam line!"
-                : bossWave == BOSS_WAVES ? "  SLUDGELINGS will crawl to the bins - pop them!" : "";
-        showToast("Wave " + bossWave + " of " + BOSS_WAVES + "! " + added + " pieces washed ashore." + skill,
-                skill.isEmpty() ? 3 : 4);
+        morphling.startCast(CoastalMorphling.Cast.ROAR);
+        String skill = bossWave == 1 ? "  GEYSERS burst from the red circles - step out before they blow!"
+                : bossWave == 2 ? "  It now calls the TIDE - get out of the foam line!"
+                : "  SLUDGELINGS will crawl to the bins - pop them!";
+        showToast("Wave " + bossWave + " of " + BOSS_WAVES + "! " + added + " pieces washed ashore." + skill, 4);
     }
 
     private void pickUp(Garbage g) {
@@ -510,8 +589,10 @@ public class GamePanel {
             int reward = item == GarbageType.HAZARDOUS ? 10 : 5;
             player.addMoney(reward);
             player.addScore(10);
-            if (carried.isBossWaveLitter() && level instanceof Level4Beach)
+            if (carried.isBossWaveLitter() && level instanceof Level4Beach) {
                 bossWaveRemaining = Math.max(0, bossWaveRemaining - 1);
+                morphling.flinch();
+            }
             else level.registerCorrectSort();
             if (trashBoss != null && !trashBoss.isDying() && !trashBoss.isEmerging())   // its HP = trash left
                 showToast("Correct! " + bossTitle() + " -1 HP  +\u20B1" + reward, 1.5);
@@ -666,7 +747,7 @@ public class GamePanel {
 
     private void drawDevGuide(Graphics2D g) {
         if (!devTools) return;
-        int x = 12, y = 132;
+        int x = 14, y = statsBottom + 10;
         if (!devGuideVisible) {
             panel(g, x, y, 132, 26);
             g.setFont(new Font(Font.DIALOG, Font.BOLD, 12));
@@ -832,14 +913,15 @@ public class GamePanel {
     }
 
     private void addShake(double seconds, double strength) {
+        if (!PauseMenu.screenShake()) return;
         shakeStrength = Math.max(shakeTime > 0 ? shakeStrength : 0, strength);
         shakeTime = Math.max(shakeTime, seconds);
     }
 
-    private void drawTrashBossBar(Graphics2D g, int W) {
+    private void drawTrashBossBar(Graphics2D g, int W, int py) {
         TrashBoss boss = trashBoss;
         if (boss == null || boss.isGone()) return;
-        int pw = Math.min(300, W - 40), px = (W - pw) / 2, py = 12;
+        int pw = Math.min(300, W - 40), px = (W - pw) / 2;
         panel(g, px, py, pw, 50);
         g.setFont(new Font(Font.DIALOG, Font.BOLD, 14));
         g.setColor(new Color(255, 112, 103));
@@ -876,6 +958,13 @@ public class GamePanel {
 
     // ------------------------------------------------------------ render
     public void renderFrame(Graphics2D g, int width, int height) {
+        viewW = width;
+        viewH = height;
+        renderScene(g, width, height);
+        if (menu.isOpen()) menu.render(g, width, height, lastInput, level.getName(), gearSummary());
+    }
+
+    private void renderScene(Graphics2D g, int width, int height) {
         Graphics2D fg = frame.createGraphics();
         level.draw(fg, player);
         drawScanner(fg);
@@ -901,7 +990,7 @@ public class GamePanel {
             return;
         }
         int shakeX = 0, shakeY = 0;
-        if (shakeTime > 0) {
+        if (shakeTime > 0 && PauseMenu.screenShake()) {
             double s = shakeStrength * Math.min(1, shakeTime / 0.25) * width / WORLD_W;
             shakeX = (int) Math.round(Math.sin(stageTime * 53) * s);
             shakeY = (int) Math.round(Math.cos(stageTime * 41) * s * 0.6);
@@ -911,173 +1000,285 @@ public class GamePanel {
         g.drawImage(frame, shakeX, shakeY, width, height, null);
         g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
         level.drawOverlay(g, width, height);
-        drawHud(g, width, height);
+        if (!menu.isOpen()) drawHud(g, width, height);   // the pause menu has the screen to itself
     }
 
+    /** A HUD plate (pixel style, same as the main menu). */
     private void panel(Graphics2D g, int x, int y, int w, int h) {
-        g.setColor(new Color(15, 20, 25, 190));
-        g.fillRoundRect(x, y, w, h, 12, 12);
-        g.setColor(new Color(255, 255, 255, 60));
-        g.drawRoundRect(x, y, w, h, 12, 12);
+        HudArt.plate(g, x, y, w, h, false);
     }
 
     private int potionCount() {
         return shopManager == null ? 0 : shopManager.getPotionCount();
     }
 
-    /** Shop gear worn this run plus the potion pouch, under the stats panel in every level. */
-    private void drawGearPanel(Graphics2D g, int minWidth) {
+    private static final int HUD_MARGIN = 12, CHIP_H = 30, LEVEL_BANNER_SECONDS = 4;
+    /** HUD text size: 1.5x the pixel font, so the text stays small but crisp. */
+    private static final double TXT = 1.5;
+
+    /**
+     * The HUD is split into small chips along the edges so the middle of the map stays clear:
+     * lives and coins top-left, cleanliness top-centre, litter count and the menu button top-right,
+     * the bag bottom-centre, key hints bottom-right.
+     */
+    private void drawHud(Graphics2D g, int W, int H) {
+        Graphics2D hud = (Graphics2D) g.create();
+        hud.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_OFF);
+        statsBottom = drawLivesAndCoins(hud);
+        drawTopRight(hud, W);
+        int centerBottom = drawTopCenter(hud, W);
+        int hotbarTop = drawHotbar(hud, W, H);
+        drawStatusPill(hud, H);
+        drawKeyHints(hud, W, H);
+        drawDevGuide(hud);
+
+        if (nearBin != null && !player.bagEmpty())
+            drawActionHint(hud, "E", "Throw " + player.getBag().get(player.getSelectedIndex()).getItemName()
+                    + " in " + nearBin.getType().getLabel(), W, hotbarTop - 34);
+        else if (nearGarbage != null) drawActionHint(hud, "E", "Pick up " + nearGarbage.getItemName(), W, hotbarTop - 34);
+
+        int toastY = centerBottom + 8;
+        if (stageTime < LEVEL_BANNER_SECONDS && introTime < 0) toastY = drawLevelBanner(hud, W, toastY) + 8;
+        if (toastTime > 0) drawToast(hud, toast, W, toastY);
+        hud.dispose();
+    }
+
+    /** Top-left: coin and score chips, with the lives chip under them. Returns the bottom. */
+    private int drawLivesAndCoins(Graphics2D g) {
+        int x = HUD_MARGIN, y = HUD_MARGIN;
+        String money = String.valueOf(player.getMoney());
+        int mw = 34 + HudArt.width(money, TXT, HudArt.GOLD_TEXT);
+        panel(g, x, y, mw, 26);
+        HudArt.coin(g, x + 9, y + 7, 2);
+        HudArt.text(g, money, x + 24, y + 8, TXT, HudArt.GOLD_TEXT);
+
+        String score = String.valueOf(player.getScore());
+        int sx = x + mw + 6, sw = 34 + HudArt.width(score, TXT, HudArt.WHITE);
+        panel(g, sx, y, sw, 26);
+        HudArt.star(g, sx + 9, y + 8, 2);
+        HudArt.text(g, score, sx + 24, y + 8, TXT, HudArt.WHITE);
+
+        int row = y + 26 + 6, hearts = player.getMaxHealth();
+        int w = 14 + hearts * 18 - 4;
+        panel(g, x, row, w, 26);
+        for (int i = 0; i < hearts; i++) HudArt.heart(g, x + 7 + i * 18, row + 6, 2, i < player.getHealth());
+        return row + 26;
+    }
+
+    private String gearSummary() {
         StringBuilder gear = new StringBuilder();
         if (capacityBonus > 0) {
             String bag = shopManager == null ? null : shopManager.getEquippedBagName();
             gear.append(bag == null ? "Bag" : bag.replace(" Trash", "")).append(" +").append(capacityBonus);
         }
-        if (runningShoes) gear.append(gear.length() > 0 ? "  •  " : "").append("Shoes +25%");
-        if (scanningGloves) gear.append(gear.length() > 0 ? "  •  " : "").append("Gloves");
-        String gearText = "Gear: " + (gear.length() > 0 ? gear : "none");
-
-        g.setFont(new Font(Font.DIALOG, Font.BOLD, 13));
-        FontMetrics fm = g.getFontMetrics();
-        int max = shopManager == null ? 5 : shopManager.getMaxPotions();
-        String potionLabel = "Potions [H]";
-        int w = Math.max(minWidth, Math.max(fm.stringWidth(gearText), fm.stringWidth(potionLabel) + 8 + max * 14) + 24);
-        int y = 132;
-        panel(g, 12, y, w, 50);
-        g.setColor(gear.length() > 0 ? new Color(150, 225, 255) : new Color(170, 170, 175));
-        g.drawString(gearText, 24, y + 19);
-        g.setColor(Color.WHITE);
-        g.drawString(potionLabel, 24, y + 39);
-        int px = 24 + fm.stringWidth(potionLabel) + 8;
-        for (int i = 0; i < max; i++) {
-            boolean full = i < potionCount();
-            int x = px + i * 14;
-            g.setColor(full ? new Color(220, 235, 238) : new Color(70, 72, 78));
-            g.fillRect(x + 3, y + 27, 4, 3);          // neck
-            g.fillRect(x, y + 30, 10, 11);            // flask
-            if (full) {
-                g.setColor(new Color(229, 72, 77));
-                g.fillRect(x + 1, y + 33, 8, 7);      // liquid
-            }
-        }
-        g.setFont(new Font(Font.DIALOG, Font.BOLD, 15));
+        if (runningShoes) gear.append(gear.length() > 0 ? ", " : "").append("Shoes");
+        if (scanningGloves) gear.append(gear.length() > 0 ? ", " : "").append("Gloves");
+        if (shopManager != null)
+            gear.append(gear.length() > 0 ? ", " : "").append("Potions ").append(potionCount())
+                    .append("/").append(shopManager.getMaxPotions());
+        return gear.length() > 0 ? gear.toString() : "none";
     }
 
-    private void drawHud(Graphics2D g, int W, int H) {
-        g.setFont(new Font(Font.DIALOG, Font.BOLD, 15));
-
-        // top-left stats
-        String title = "ECO QUEST - " + level.getName();
-        FontMetrics statsMetrics = g.getFontMetrics();
-        int statsPanelWidth = Math.max(270, statsMetrics.stringWidth(title) + 24);
-        statsPanelWidth = Math.min(statsPanelWidth, W - 206);
-        panel(g, 12, 12, statsPanelWidth, 112);
-        g.setColor(Color.WHITE);
-        g.drawString(title, 24, 34);
-        g.setColor(new Color(255, 214, 90));
-        g.drawString("\u20B1 " + player.getMoney(), 24, 56);
-        g.setColor(Color.WHITE);
-        g.drawString("Score " + player.getScore(), 130, 56);
-        for (int i = 0; i < player.getMaxHealth(); i++) {
-            g.setColor(i < player.getHealth() ? new Color(230, 60, 70) : new Color(90, 90, 95));
-            g.setFont(new Font(Font.DIALOG, Font.BOLD, 20));
-            g.drawString("\u2665", 24 + i * 24, 82);
+    /** Top-right: the menu button, the litter count, and the timer / scanner chips under it. */
+    private void drawTopRight(Graphics2D g, int W) {
+        int size = 34, bx = W - HUD_MARGIN - size, by = HUD_MARGIN;
+        menuButton.setBounds(bx, by, size, size);
+        boolean hover = lastInput != null && menuButton.contains(lastInput.getMouseX(), lastInput.getMouseY());
+        HudArt.plate(g, bx, by, size, size, hover);
+        for (int i = 0; i < 3; i++) {
+            g.setColor(new Color(10, 16, 26));
+            g.fillRect(bx + 9, by + 10 + i * 6 + 1, 16, 3);
+            g.setColor(hover ? new Color(255, 255, 240) : new Color(226, 232, 240));
+            g.fillRect(bx + 9, by + 10 + i * 6, 16, 3);
         }
-        g.setFont(new Font(Font.DIALOG, Font.BOLD, 15));
-        int pct = level.cleanliness();
-        g.setColor(Color.WHITE);
-        g.drawString("Cleanliness " + pct + "%", 24, 100);
-        g.setColor(new Color(60, 60, 65));
-        int cleanBarWidth = statsPanelWidth - 36;
-        g.fillRect(24, 106, cleanBarWidth, 9);
-        g.setColor(pct < 50 ? new Color(220, 150, 50) : new Color(80, 200, 90));
-        g.fillRect(24, 106, cleanBarWidth * pct / 100, 9);
 
-        drawGearPanel(g, statsPanelWidth);
-
-        // top-right garbage counter (+ park timer)
         boolean bossActive = bossStarted && !bossDefeated;
-        String counter = bossActive ? "Wave litter: " + bossWaveRemaining
-                : level.sortTarget() > 0 ? "Sorted: " + level.getSortedCorrect() + " / " + level.sortTarget()
-                : "Litter left: " + level.garbageLeft();
-        int counterHeight = timeLeft > 0 ? 58 : 36;
-        panel(g, W - 182, 12, 170, counterHeight);
-        g.setColor(Color.WHITE);
-        g.drawString(counter, W - 168, 36);
+        String value = bossActive ? String.valueOf(bossWaveRemaining)
+                : level.sortTarget() > 0 ? level.getSortedCorrect() + "/" + level.sortTarget()
+                : String.valueOf(level.garbageLeft());
+        String label = level.sortTarget() > 0 && !bossActive ? "Sorted" : "Litter";   // boss waves count litter too
+        int vw = HudArt.width(value, 2, HudArt.WHITE), lw = HudArt.width(label, TXT, HudArt.DIM);
+        int cw = 32 + vw + 8 + lw, cx = bx - 6 - cw;
+        panel(g, cx, by, cw, size);
+        HudArt.trash(g, cx + 9, by + 11, 2);
+        HudArt.text(g, value, cx + 26, by + 10, 2, HudArt.WHITE);
+        HudArt.text(g, label, cx + 26 + vw + 8, by + 13, TXT, HudArt.DIM);
+
+        int y = by + size + 6;
         if (timeLeft > 0) {
-            g.setColor(timeLeft <= 30 ? new Color(255, 112, 103) : new Color(255, 226, 122));
-            g.drawString(String.format("Time %d:%02d", (int) timeLeft / 60, (int) timeLeft % 60), W - 168, 58);
+            String time = String.format("%d:%02d", (int) timeLeft / 60, (int) timeLeft % 60);
+            int tw = 20 + HudArt.width("Time " + time, TXT, HudArt.WHITE);
+            panel(g, W - HUD_MARGIN - tw, y, tw, 24);
+            HudArt.text(g, "Time " + time, W - HUD_MARGIN - tw + 10, y + 7, TXT,
+                    timeLeft <= 30 ? HudArt.RED_TEXT : HudArt.GOLD_TEXT);
+            y += 30;
         }
-
-        // Litter Picker's Scanner Lite status
-        if (hasScanner()) {
-            int sy = 12 + counterHeight + 8;
-            panel(g, W - 182, sy, 170, 30);
-            String status = scanTimeLeft > 0 ? "SCANNING " + (int) Math.ceil(scanTimeLeft) + "s"
-                    : scannerUsed ? "SCANNER: USED" : "SCANNER [F]: READY";
-            g.setColor(scanTimeLeft > 0 ? new Color(120, 230, 255)
-                    : scannerUsed ? new Color(150, 155, 165) : new Color(140, 235, 150));
-            g.drawString(status, W - 168, sy + 21);
+        if (hasScanner()) {                                   // Litter Picker's Scanner Lite
+            String status = scanTimeLeft > 0 ? "Scanning " + (int) Math.ceil(scanTimeLeft) + "s"
+                    : scannerUsed ? "Scanner used" : "Scanner [F]";
+            int sw = 20 + HudArt.width(status, TXT, HudArt.WHITE);
+            panel(g, W - HUD_MARGIN - sw, y, sw, 24);
+            HudArt.text(g, status, W - HUD_MARGIN - sw + 10, y + 7, TXT,
+                    scannerUsed && scanTimeLeft <= 0 ? HudArt.DIM : HudArt.TEAL_TEXT);
         }
+    }
 
-        // beach boss wave banner
-        if (bossActive) {
+    /** Top-centre: the cleanliness meter, then the beach wave banner or a boss bar. Returns the bottom. */
+    private int drawTopCenter(Graphics2D g, int W) {
+        int w = 250, x = (W - w) / 2, y = HUD_MARGIN;
+        int pct = level.cleanliness();
+        panel(g, x, y, w, CHIP_H);
+        HudArt.leaf(g, x + 10, y + 10, 2);
+        HudArt.text(g, "Clean", x + 30, y + 11, TXT, HudArt.WHITE);
+        String pctText = pct + "%";
+        int pw = HudArt.width(pctText, TXT, HudArt.WHITE);
+        HudArt.text(g, pctText, x + w - 10 - pw, y + 11, TXT, HudArt.WHITE);
+        int barX = x + 30 + HudArt.width("Clean", TXT, HudArt.WHITE) + 10, barW = x + w - 18 - pw - barX, barY = y + 10;
+        g.setColor(new Color(10, 16, 26));
+        g.fillRect(barX, barY, barW, 11);
+        int fill = (barW - 4) * pct / 100;
+        if (fill > 0) {
+            g.setColor(pct < 50 ? new Color(214, 140, 50) : new Color(64, 170, 100));
+            g.fillRect(barX + 2, barY + 2, fill, 7);
+            g.setColor(pct < 50 ? new Color(250, 196, 100) : new Color(150, 230, 160));
+            g.fillRect(barX + 2, barY + 2, fill, 2);
+        }
+        int bottom = y + CHIP_H;
+
+        if (bossStarted && !bossDefeated) {
             int seconds = (int) Math.ceil(bossTimeLeft);
-            String waveText = "WAVE " + Math.max(1, bossWave) + "/" + BOSS_WAVES + "   " + bossWaveRemaining
-                    + " LEFT   " + (seconds / 60) + ":" + String.format("%02d", seconds % 60);
-            g.setFont(new Font(Font.DIALOG, Font.BOLD, 14));
-            int waveWidth = g.getFontMetrics().stringWidth(waveText) + 32;
-            panel(g, (W - waveWidth) / 2, 12, waveWidth, 34);
-            g.setColor(new Color(255, 112, 103));
-            g.drawString(waveText, (W - waveWidth) / 2 + 16, 35);
-            g.setFont(new Font(Font.DIALOG, Font.BOLD, 15));
+            String wave = "Wave " + Math.max(1, bossWave) + "/" + BOSS_WAVES;
+            String rest = bossWaveRemaining + " left  " + (seconds / 60) + ":" + String.format("%02d", seconds % 60);
+            int ww = HudArt.width(wave, TXT, HudArt.RED_TEXT), rw = HudArt.width(rest, TXT, HudArt.WHITE);
+            int bw = ww + rw + 36, bx = (W - bw) / 2, by = bottom + 6;
+            panel(g, bx, by, bw, 24);
+            HudArt.text(g, wave, bx + 12, by + 7, TXT, HudArt.RED_TEXT);
+            HudArt.text(g, rest, bx + 24 + ww, by + 7, TXT, seconds <= 30 ? HudArt.RED_TEXT : HudArt.WHITE);
+            bottom = by + 24;
+        } else if (trashBoss != null && !trashBoss.isGone()) {
+            drawTrashBossBar(g, W, bottom + 6);
+            bottom += 6 + 50;
         }
+        return bottom;
+    }
 
-        // bottom-left bag
-        panel(g, 12, H - 74, 24 + player.getCapacity() * 36, 62);
-        g.setColor(Color.WHITE);
-        g.setFont(new Font(Font.DIALOG, Font.BOLD, 12));
-        g.drawString("BAG  (Q = switch item)", 24, H - 56);
-        for (int i = 0; i < player.getCapacity(); i++) {
-            int sx = 24 + i * 36, sy = H - 48;
+    /** The level's name on a cream plate (like the main menu tagline) for the first seconds. */
+    private int drawLevelBanner(Graphics2D g, int W, int y) {
+        String name = level.getName();
+        int w = HudArt.width(name, TXT, HudArt.TAGLINE) + 50, x = (W - w) / 2;
+        float fade = (float) Math.min(1, (LEVEL_BANNER_SECONDS - stageTime) / 0.6);
+        Graphics2D b = (Graphics2D) g.create();
+        b.setComposite(AlphaComposite.SrcOver.derive(Math.max(0, fade)));
+        HudArt.creamPlate(b, x, y, w, 24);
+        HudArt.leaf(b, x + 10, y + 6, 2);
+        HudArt.text(b, name, x + 32, y + 7, TXT, HudArt.TAGLINE);
+        b.dispose();
+        return y + 24;
+    }
+
+    /** Bottom-centre: the bag slots, with the potion pouch to its left. Returns the bag's top. */
+    private int drawHotbar(Graphics2D g, int W, int H) {
+        int cap = player.getCapacity(), slot = 38, gap = 5, pad = 8;
+        int w = Math.max(200, pad * 2 + cap * slot + (cap - 1) * gap), h = slot + 28;
+        int x = (W - w) / 2, y = H - HUD_MARGIN - h;
+        panel(g, x, y, w, h);
+        String count = "Bag " + player.getBag().size() + "/" + cap;
+        HudArt.text(g, count, x + pad, y + 8, TXT, HudArt.TEAL_TEXT);
+        if (!player.bagEmpty()) {
+            String name = player.getBag().get(player.getSelectedIndex()).getItemName();
+            int room = w - pad * 2 - HudArt.width(count, TXT, HudArt.TEAL_TEXT) - 12;
+            while (name.length() > 3 && HudArt.width(name, TXT, HudArt.LIGHT) > room) name = name.substring(0, name.length() - 1);
+            HudArt.text(g, name, x + w - pad - HudArt.width(name, TXT, HudArt.LIGHT), y + 8, TXT, HudArt.LIGHT);
+        }
+        for (int i = 0; i < cap; i++) {
+            int sx = x + (w - (cap * slot + (cap - 1) * gap)) / 2 + i * (slot + gap), sy = y + 22;
             Garbage item = i < player.getBag().size() ? player.getBag().get(i) : null;
-            g.setColor(item == null ? new Color(50, 55, 60) : new Color(item.getType().getColor()));
-            g.fillRect(sx, sy, 30, 26);
-            if (item != null) item.drawIcon(g, sx + 6, sy + 4, 18);
-            if (i == player.getSelectedIndex() && !player.bagEmpty()) {
-                g.setColor(Color.WHITE);
-                g.drawRect(sx - 1, sy - 1, 31, 27);
+            boolean sel = item != null && i == player.getSelectedIndex();
+            g.setColor(new Color(10, 16, 26));
+            g.fillRect(sx, sy, slot, slot);
+            if (item != null) {
+                Color type = new Color(item.getType().getColor());
+                g.setColor(new Color(type.getRed(), type.getGreen(), type.getBlue(), 70));
+                g.fillRect(sx + 2, sy + 2, slot - 4, slot - 4);
+                item.drawIcon(g, sx + 8, sy + 6, slot - 16);
+                g.setColor(type);
+                g.fillRect(sx + 2, sy + slot - 6, slot - 4, 4);
+            }
+            g.setStroke(new BasicStroke(2));
+            g.setColor(sel ? HudArt.TEAL : HudArt.BORDER);
+            g.drawRect(sx, sy, slot, slot);
+            g.setStroke(new BasicStroke(1));
+            if (sel) {
+                g.setColor(HudArt.TEAL);
+                g.fillRect(sx + slot / 2 - 4, sy - 4, 8, 3);
             }
         }
-
-        if (player.getSlowTimer() > 0) {
-            g.setFont(new Font(Font.DIALOG, Font.BOLD, 13));
-            g.setColor(new Color(255, 170, 90));
-            g.drawString((player.isStunned() ? "STUNNED  " : "SLOWED ")
-                    + (int) Math.ceil(player.getSlowTimer()) + "s", 24, H - 84);
+        if (shopManager != null) {                            // potion pouch [H]
+            int max = shopManager.getMaxPotions(), pw = 34 + max * 15, px = x - 8 - pw, py = y + h - 34;
+            panel(g, px, py, pw, 34);
+            HudArt.key(g, "H", px + 8, py + 9, TXT);
+            for (int i = 0; i < max; i++) HudArt.flask(g, px + 30 + i * 15, py + 11, 2, i < potionCount());
         }
+        return y;
+    }
 
-        // bottom-right controls
-        g.setFont(new Font(Font.DIALOG, Font.PLAIN, 12));
-        g.setColor(new Color(255, 255, 255, 220));
-        String controls = player.isOnBoat()
-                ? "BOAT  W/S: throttle   A/D: steer   E: pick up   Q: switch item   R: restart"
-                : "WASD / Arrows: move   E: pick up / throw   Q: switch item   R: restart";
-        if (hasScanner() && !scannerUsed) controls = "F: scan   " + controls;
-        if (potionCount() > 0) controls = "H: potion   " + controls;
-        g.drawString(controls, W - g.getFontMetrics().stringWidth(controls) - 14, H - 14);
+    /** Bottom-left: stunned / slowed timer. */
+    private void drawStatusPill(Graphics2D g, int H) {
+        if (player.getSlowTimer() <= 0 && !player.isStunned()) return;
+        String text = player.isStunned() ? "Stunned!" : "Slowed " + (int) Math.ceil(player.getSlowTimer()) + "s";
+        int w = 22 + HudArt.width(text, TXT, HudArt.RED_TEXT), y = H - HUD_MARGIN - 26;
+        panel(g, HUD_MARGIN, y, w, 26);
+        HudArt.text(g, text, HUD_MARGIN + 11, y + 8, TXT, player.isStunned() ? HudArt.GOLD_TEXT : HudArt.RED_TEXT);
+    }
 
-        // context hint
-        drawTrashBossBar(g, W);
-        drawDevGuide(g);
-        String hint = null;
-        if (nearBin != null && !player.bagEmpty())
-            hint = "E: Throw " + player.getBag().get(player.getSelectedIndex()).getItemName()
-                    + " in the " + nearBin.getType().getLabel() + " bin";
-        else if (nearGarbage != null) hint = "E: pick up " + nearGarbage.getItemName();
-        if (hint != null) centered(g, hint, W, H - 96, 15);
+    /** Bottom-right: a short control reminder (can be turned off in Settings). */
+    private void drawKeyHints(Graphics2D g, int W, int H) {
+        if (!PauseMenu.keyHints()) return;
+        String[][] keys = player.isOnBoat()
+                ? new String[][] {{"W/S", "Go"}, {"A/D", "Steer"}, {"Esc", "Menu"}}
+                : new String[][] {{"E", "Use"}, {"Q", "Switch"}, {"Esc", "Menu"}};
+        int x = W - HUD_MARGIN, y = H - HUD_MARGIN - 18;
+        for (int i = keys.length - 1; i >= 0; i--) {
+            x -= HudArt.width(keys[i][1], TXT, HudArt.LIGHT);
+            HudArt.text(g, keys[i][1], x, y + 4, TXT, HudArt.LIGHT);
+            x -= HudArt.keyWidth(keys[i][0], TXT) + 5;
+            HudArt.key(g, keys[i][0], x, y, TXT);
+            x -= 12;
+        }
+    }
 
-        if (toastTime > 0) centered(g, toast, W, trashBoss != null ? 104 : 70, 16);
+    /** "[E] Pick up plastic water bottle" above the bag. */
+    private void drawActionHint(Graphics2D g, String key, String text, int W, int y) {
+        int tw = HudArt.width(text, TXT, HudArt.WHITE), w = tw + 44, x = (W - w) / 2;
+        panel(g, x, y, w, 26);
+        HudArt.key(g, key, x + 7, y + 5, TXT);
+        HudArt.text(g, text, x + 32, y + 8, TXT, HudArt.WHITE);
+    }
 
+    /** Messages, centred under the top chips and wrapped to fit. */
+    private void drawToast(Graphics2D g, String text, int W, int y) {
+        int maxW = 560;
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.split(" ")) {
+            if (word.isEmpty()) continue;
+            String tryLine = line.length() == 0 ? word : line + " " + word;
+            if (HudArt.width(tryLine, TXT, HudArt.WHITE) > maxW - 28 && line.length() > 0) {
+                lines.add(line.toString());
+                line = new StringBuilder(word);
+            } else line = new StringBuilder(tryLine);
+        }
+        if (line.length() > 0) lines.add(line.toString());
+        int w = 0;
+        for (String l : lines) w = Math.max(w, HudArt.width(l, TXT, HudArt.WHITE));
+        w += 28;
+        int h = 14 + lines.size() * 15, x = (W - w) / 2;
+        Graphics2D t = (Graphics2D) g.create();
+        t.setComposite(AlphaComposite.SrcOver.derive((float) Math.min(1, toastTime / 0.3)));
+        panel(t, x, y, w, h);
+        for (int i = 0; i < lines.size(); i++)
+            HudArt.text(t, lines.get(i), x + (w - HudArt.width(lines.get(i), TXT, HudArt.WHITE)) / 2, y + 9 + i * 15, TXT, HudArt.WHITE);
+        t.dispose();
     }
 
     // ------------------------------------------------------------ beach boss cinematic
@@ -1243,7 +1444,7 @@ public class GamePanel {
             g.setColor(new Color(255, 255, 255, (int) (255 * Math.max(0, Math.min(1, flashAlpha)))));
             g.fillRect(0, 0, width, height);
         } else {
-            title = "FIVE WAVES. FIVE MINUTES.";
+            title = "THREE WAVES. FIVE MINUTES.";
             detail = "Clear every wave to save the beach.";
         }
         drawCinematicBars(g, width, height, title, detail, new Color(255, 76, 68), null);

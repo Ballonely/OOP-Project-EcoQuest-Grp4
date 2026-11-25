@@ -184,9 +184,7 @@ public abstract class Level {
     public double speedFactorAt(Rectangle2D box) {
         double f = 1.0;
         for (Prop p : props) {
-            boolean overlaps = p instanceof WaterImpact impact
-                    ? impact.overlapsSlowZone(box) : p.bounds().intersects(box);
-            if (p.speedFactor() < f && overlaps) f = p.speedFactor();
+            if (p.speedFactor() < f && p.bounds().intersects(box)) f = p.speedFactor();
         }
         return f;
     }
@@ -214,7 +212,7 @@ public abstract class Level {
     public void addNpc(Entity npc) { npcs.add(npc); }
     public void removeNpc(Entity npc) { npcs.remove(npc); }
 
-    /** Short-lived props (e.g. the Level 4 boss splash zones) that remove themselves when done. */
+    /** Short-lived props (e.g. the Level 4 boss geysers) that remove themselves when done. */
     public void addTemporaryProp(Prop prop) {
         props.add(prop);
         temporaryProps.add(prop);

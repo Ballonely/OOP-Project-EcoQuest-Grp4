@@ -21,7 +21,7 @@ import static com.ecoquest.level1.Config.WORLD_W;
  */
 public final class BossCore {
     /** What a thrown object looks like. */
-    public static final int BAG = 0, TOMATO = 1, FISH = 2, MANGO = 3, CABBAGE = 4;
+    public static final int BAG = 0, TOMATO = 1, FISH = 2, MANGO = 3, CABBAGE = 4, BOTTLE = 5, BATTERY = 6, OIL_CAN = 7;
     private static final double SPLAT_SECONDS = 0.45, FLOATER_SECONDS = 1.0, FLASH_SECONDS = 0.45;
 
     /** Something flying along an arc to a telegraphed spot; it lands as its {@link TrashBoss.Strike}. */
@@ -246,6 +246,30 @@ public final class BossCore {
                 g.setColor(new Color(0xF8D060)); g.fillRect(cx - 2, cy - 3, 2, 2);
                 g.setColor(new Color(0x6A4A1A)); g.fillRect(cx, cy + 1, 2, 2);       // bruise
             }
+            case BOTTLE -> {                // a plastic bottle spike, spinning end over end
+                g.rotate(spin * 1.3, cx, cy);
+                g.setColor(new Color(0x23495F)); g.fillRoundRect(cx - 5, cy - 2, 10, 5, 3, 3);
+                g.setColor(new Color(0x76BCE2)); g.fillRoundRect(cx - 4, cy - 1, 7, 3, 2, 2);
+                g.setColor(new Color(0xD2F0FF)); g.fillRect(cx - 3, cy - 1, 4, 1);
+                g.setColor(new Color(0xD8402E)); g.fillRect(cx + 4, cy - 1, 2, 3);   // cap
+            }
+            case BATTERY -> {               // a leaking car battery, tumbling
+                g.rotate(spin * 0.9, cx, cy);
+                g.setColor(new Color(0x111214)); g.fillRect(cx - 5, cy - 4, 10, 8);
+                g.setColor(new Color(0x2E3134)); g.fillRect(cx - 4, cy - 3, 8, 6);
+                g.setColor(new Color(0xE8C440)); g.fillRect(cx - 3, cy, 6, 1);       // label stripe
+                g.setColor(new Color(0xD8402E)); g.fillRect(cx - 4, cy - 5, 2, 1);   // + terminal
+                g.setColor(new Color(0x111111)); g.fillRect(cx + 2, cy - 5, 2, 1);   // - terminal
+                g.setColor(new Color(0x9AD04A)); g.fillRect(cx + 1, cy + 4, 1, 1);   // acid drip
+            }
+            case OIL_CAN -> {               // a motor-oil can, sloshing out a black trail
+                g.rotate(spin * 0.7, cx, cy);
+                g.setColor(new Color(0x14100E)); g.fillRect(cx - 4, cy - 5, 8, 10);
+                g.setColor(new Color(0x2C6E3A)); g.fillRect(cx - 3, cy - 4, 6, 8);
+                g.setColor(new Color(0xE8C440)); g.fillRect(cx - 3, cy - 1, 6, 2);   // label
+                g.setColor(new Color(0x8D959A)); g.fillRect(cx + 1, cy - 7, 2, 2);   // spout
+                g.setColor(new Color(0x0E0C10)); g.fillRect(cx + 2, cy - 9, 1, 2);   // oil glug
+            }
             case CABBAGE -> {
                 g.rotate(spin * 0.6, cx, cy);
                 g.setColor(new Color(0x1E3A18)); g.fillOval(cx - 5, cy - 4, 10, 9);
@@ -273,6 +297,9 @@ public final class BossCore {
             case FISH -> new int[] { 0x7A8890, 0xB8C8D0 };
             case MANGO -> new int[] { 0xD08A20, 0xF4C050 };
             case CABBAGE -> new int[] { 0x5E9A4A, 0x9AD47A };
+            case BOTTLE -> new int[] { 0x4E8FB4, 0xD2F0FF };
+            case BATTERY -> new int[] { 0x6E8A2A, 0x9AD04A };
+            case OIL_CAN -> new int[] { 0x0E0C10, 0x3A3448 };
             default -> new int[] { 0x5C6E32, 0x96AA50 };
         };
     }

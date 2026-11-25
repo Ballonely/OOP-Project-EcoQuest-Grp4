@@ -260,6 +260,10 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
 
         if (level1Game != null) {
             level1Game.updateFrame(dt, input);
+            if (level1Game.consumeQuitRequest()) {      // "Main menu" in the in-game menu
+                state = GameState.MAIN_MENU;
+                return;
+            }
             if (level1Game.isFinished()) {
                 int endMoney = withRoleCoinBonus(level1Game.getMoney());
                 shopManager.setMoney(endMoney);
@@ -426,19 +430,31 @@ public class Game extends JPanel implements Runnable, MenuManager.MenuListener,
     // ------------------------------------------------------------------
     // Render pass
     // ------------------------------------------------------------------
-    /** Logical canvas width: every screen lays out against this, not the window size. */
-    private int viewWidth() { return Constants.WINDOW_WIDTH; }
+    /**
+     * Logical canvas width. The canvas is at least WINDOW_WIDTH x WINDOW_HEIGHT and grows along
+     * one side to match the window's shape, so a maximized or full-screen window is filled edge to
+     * edge (no black bars); every screen lays out against this size, not the window's pixels.
+     */
+    private int viewWidth() {
+        int pw = getWidth(), ph = getHeight();
+        if (pw <= 0 || ph <= 0) return Constants.WINDOW_WIDTH;
+        return Math.max(Constants.WINDOW_WIDTH, (int) Math.round(Constants.WINDOW_HEIGHT * pw / (double) ph));
+    }
 
-    /** Logical canvas height: every screen lays out against this, not the window size. */
-    private int viewHeight() { return Constants.WINDOW_HEIGHT; }
+    /** Logical canvas height (see {@link #viewWidth()}). */
+    private int viewHeight() {
+        int pw = getWidth(), ph = getHeight();
+        if (pw <= 0 || ph <= 0) return Constants.WINDOW_HEIGHT;
+        return Math.max(Constants.WINDOW_HEIGHT, (int) Math.round(Constants.WINDOW_WIDTH * ph / (double) pw));
+    }
 
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2 = (Graphics2D) g.create();
         try {
-            // Scale the fixed logical canvas to fit the window (windowed, maximized or
-            // full screen), keeping its aspect ratio and letterboxing the leftover space.
+            // Scale the logical canvas to the window. Its shape follows the window's
+            // (see viewWidth), so it fills the window with no letterbox bars.
             int panelW = super.getWidth();
             int panelH = super.getHeight();
             double scale = Math.min(panelW / (double) viewWidth(), panelH / (double) viewHeight());

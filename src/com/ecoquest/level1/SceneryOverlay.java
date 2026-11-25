@@ -10,7 +10,7 @@ import java.awt.image.BufferedImage;
  * small collision box. {@link Level#draw} makes it see-through while it overlaps the player.
  */
 public final class SceneryOverlay extends Prop {
-    private final BufferedImage image;
+    private BufferedImage image;
     private final int baseY;
 
     /**
@@ -22,6 +22,9 @@ public final class SceneryOverlay extends Prop {
         this.image = image;
         this.baseY = baseY;
     }
+
+    /** Swaps the art (same size), e.g. for a darker copy while the ground under it is tinted. */
+    public void setImage(BufferedImage image) { this.image = image; }
 
     @Override public Rectangle2D.Double collisionBox() { return null; }
     @Override public int sortY() { return baseY; }

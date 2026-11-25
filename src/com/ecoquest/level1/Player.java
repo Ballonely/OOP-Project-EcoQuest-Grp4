@@ -44,7 +44,12 @@ public class Player extends Entity {
     private boolean onBoat;
     private double boatHeading, boatSpeed;
     private double slowTimer;
+    /** A much stronger slow (e.g. caught by the burrowing Morphling). */
+    private double heavySlowTimer;
     private double stunTimer, mudTimer;
+    /** Time left airborne after a geyser launch, and that launch's full length. */
+    private double airTimer, airDuration;
+    private static final double GEYSER_AIR_TIME = 0.75, GEYSER_STUN_AFTER = 0.55, GEYSER_HEIGHT = 26;
 
     private final BufferedImage[][] frames = new BufferedImage[FRAME_ROWS][FRAME_COLUMNS];
     private final BufferedImage[][] redFrames = new BufferedImage[FRAME_ROWS][FRAME_COLUMNS];
@@ -171,10 +176,18 @@ public class Player extends Entity {
         if (!level.isBlocked(feet(x, y + my))) y += my;
     }
 
-    // ---------- coastal effects (Level 4 boat, slow and sewage splash) ----------
+    // ---------- coastal effects (Level 4 boat, slow and geyser launch) ----------
     public void setOnBoat(boolean enabled) {
-        if (enabled && !onBoat) { onBoat = true; boatHeading = 0; boatSpeed = 0; }
-        else if (!enabled && onBoat) { onBoat = false; boatSpeed = 0; }
+        if (enabled && !onBoat) {           // the boat points the way the player was walking
+            onBoat = true;
+            boatSpeed = 0;
+            boatHeading = switch (animationRow) {
+                case LEFT_WALK_ROW -> Math.PI;
+                case BACK_WALK_ROW -> -Math.PI / 2;
+                case FRONT_WALK_ROW -> Math.PI / 2;
+                default -> 0;
+            };
+        } else if (!enabled && onBoat) { onBoat = false; boatSpeed = 0; }
     }
 
     public boolean isOnBoat() { return onBoat; }
@@ -188,7 +201,7 @@ public class Player extends Entity {
             idleFrameTimer = (idleFrameTimer + dt) % (IDLE_FRAME_DURATION * 2);
             return;
         }
-        boatHeading += turn * (0.48 + 0.9 * Math.min(1, Math.abs(boatSpeed) / 52.0)) * dt;
+        boatHeading += turn * (1.6 + 0.6 * Math.min(1, Math.abs(boatSpeed) / 52.0)) * dt;
         if (throttle > 0) boatSpeed = Math.min(52 * movementFactor(), boatSpeed + 34 * movementFactor() * dt);
         else if (throttle < 0) boatSpeed = Math.max(-18 * movementFactor(), boatSpeed - 25 * movementFactor() * dt);
         else if (boatSpeed > 0) boatSpeed = Math.max(0, boatSpeed - 13 * dt);
@@ -196,8 +209,14 @@ public class Player extends Entity {
 
         double mx = Math.cos(boatHeading) * boatSpeed * dt;
         double my = Math.sin(boatHeading) * boatSpeed * dt;
+        // Against a railing, rock or the map edge the boat slides along it instead of sticking.
         if (!level.isBlocked(feet(x + mx, y + my))) { x += mx; y += my; }
-        else boatSpeed *= 0.2;
+        else {
+            boolean slid = false;
+            if (Math.abs(mx) > 0.01 && !level.isBlocked(feet(x + mx, y))) { x += mx; slid = true; }
+            if (Math.abs(my) > 0.01 && !level.isBlocked(feet(x, y + my))) { y += my; slid = true; }
+            if (!slid) boatSpeed *= 0.2;
+        }
         if (Math.abs(mx) + Math.abs(my) > 0.1) {
             animationRow = Math.abs(mx) > Math.abs(my) ? (mx < 0 ? LEFT_WALK_ROW : RIGHT_WALK_ROW)
                     : (my < 0 ? BACK_WALK_ROW : FRONT_WALK_ROW);
@@ -210,13 +229,23 @@ public class Player extends Entity {
     }
 
     public void applySlow(double seconds) { slowTimer = Math.max(slowTimer, seconds); }
+    /** Slows the player to a crawl (a quarter of normal speed) for {@code seconds}. */
+    public void applyHeavySlow(double seconds) { heavySlowTimer = Math.max(heavySlowTimer, seconds); }
     /** Freezes the player in place briefly (e.g. bumped by a market hand cart). */
     public void applyStun(double seconds) { stunTimer = Math.max(stunTimer, seconds); }
-    public void applySewageSplash() {
-        stunTimer = Math.max(stunTimer, 0.72);
-        slowTimer = Math.max(slowTimer, 3.0);
-        mudTimer = Math.max(mudTimer, 3.0);
+    /** A geyser throws the player into the air; they can't move until a moment after landing. */
+    public void launchByGeyser() {
+        airDuration = airTimer = GEYSER_AIR_TIME;
+        stunTimer = Math.max(stunTimer, GEYSER_AIR_TIME + GEYSER_STUN_AFTER);
         boatSpeed = 0;
+    }
+
+    public boolean isAirborne() { return airTimer > 0; }
+
+    /** Height above the ground (px) during a geyser launch. */
+    private double airHeight() {
+        if (airTimer <= 0) return 0;
+        return Math.sin(Math.PI * (1 - airTimer / airDuration)) * GEYSER_HEIGHT;
     }
     /** Pushes the player by (dx, dy) in small steps, stopping at anything solid (e.g. a boss hit). */
     public void knockBack(double dx, double dy, Level level) {
@@ -227,14 +256,16 @@ public class Player extends Entity {
             if (!level.isBlocked(feet(x, y + sy))) y += sy;
         }
     }
-    public double getSlowTimer() { return slowTimer; }
+    public double getSlowTimer() { return Math.max(slowTimer, heavySlowTimer); }
     public boolean isStunned() { return stunTimer > 0; }
     private void advanceEffects(double dt) {
         slowTimer = Math.max(0, slowTimer - dt);
+        heavySlowTimer = Math.max(0, heavySlowTimer - dt);
         stunTimer = Math.max(0, stunTimer - dt);
+        airTimer = Math.max(0, airTimer - dt);
         mudTimer = Math.max(0, mudTimer - dt);
     }
-    private double movementFactor() { return slowTimer > 0 ? 0.55 : 1.0; }
+    private double movementFactor() { return heavySlowTimer > 0 ? 0.25 : slowTimer > 0 ? 0.55 : 1.0; }
 
     // ---------- bag ----------
     public boolean bagFull()    { return bag.size() >= capacity; }
@@ -315,11 +346,31 @@ public class Player extends Entity {
             int frame = (int) (hitFlashTimer / HIT_FLASH_INTERVAL);
             if (frame % 2 == 0) sprite = getRedSpriteForCurrentState();
         }
+        int lift = (int) Math.round(airHeight());
+        if (lift > 0) {                     // shadow stays on the ground while the player flies
+            int shadow = Math.max(4, 12 - lift / 3);
+            g.setColor(new Color(0, 0, 0, 80));
+            g.fillOval((int) Math.round(x + W / 2.0 - shadow / 2.0), (int) Math.round(y + H - 3), shadow, 3);
+        }
         Graphics2D graphics = (Graphics2D) g.create();
         graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                 RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-        graphics.drawImage(sprite, (int) Math.round(x), (int) Math.round(y), null);
+        graphics.drawImage(sprite, (int) Math.round(x), (int) Math.round(y) - lift, null);
         graphics.dispose();
+        if (stunTimer > 0 && lift == 0) drawDizzyStars(g);
+    }
+
+    /** Little stars circling the head while stunned. */
+    private void drawDizzyStars(Graphics2D g) {
+        double t = System.currentTimeMillis() / 1000.0;
+        for (int i = 0; i < 3; i++) {
+            double a = t * 6 + i * Math.PI * 2 / 3;
+            int sx = (int) Math.round(x + W / 2.0 + Math.cos(a) * 6), sy = (int) Math.round(y - 1 + Math.sin(a) * 2);
+            g.setColor(i == 0 ? new Color(255, 236, 120) : new Color(255, 250, 210));
+            g.fillRect(sx, sy, 1, 1);
+            g.fillRect(sx - 1, sy, 3, 1);
+            g.fillRect(sx, sy - 1, 1, 3);
+        }
     }
 
     private void drawBoat(Graphics2D g) {

@@ -29,20 +29,23 @@ import static com.ecoquest.level1.PixelCanvas.span;
  * sniff and glare at the player, and chases the player whenever they come within
  * {@value #CHASE_RANGE} px. Its abilities, all telegraphed:
  * <ul>
- *   <li><b>Garbage spew</b> (every {@value #THROW_INTERVAL} s): rears up and spews a garbage bag at a
- *       marked spot (1 HP on a hit, bursts into trash).</li>
- *   <li><b>Pounce</b>: crouches and wiggles while a red line shows its path, then lunges along it
- *       (1 HP and knock-back on contact). Slamming into a tree, bench or the pond leaves it dazed.</li>
+ *   <li><b>Spike volley</b> (every few seconds, sooner each phase): shakes, then fires the plastic
+ *       bottles off its back one after another at marked spots around the player (1 HP on a hit; the
+ *       first one bursts into trash). Each bottle leaves its back as it fires and slowly rises
+ *       back over {@value #SPIKE_REGROW} s; it only shoots again once every spike is back.</li>
+ *   <li><b>Jump</b>: crouches while a red ring marks where it will land (on the player), leaps
+ *       through the air and crashes down there (1 HP if still inside the ring). The ring stops
+ *       following the player halfway through the crouch, so there is time to step out.</li>
  *   <li><b>Leaf burrow</b> (phase 2+): dives into a leaf pile and tunnels after the player as a
  *       rustling mound, then bursts up under a warning ring (1 HP). It comes up dazed for
  *       {@value #DAZE_TIME} s, giving the player time to run.</li>
- *   <li><b>Frenzy</b> (phase 3): pounces twice in a row, more often, and prowls faster.</li>
+ *   <li><b>Frenzy</b> (phase 3): jumps twice in a row, more often, and prowls faster.</li>
  * </ul>
  * At 0 HP it shudders, deflates like a punctured bag and flowers sprout where it lay.
  */
 public class LitterBeast extends Entity implements TrashBoss {
     private enum State {
-        EMERGE, ROAM, SPEW, POUNCE_WIND, POUNCE_LUNGE, POUNCE_LAND, DIVE, TUNNEL, SURFACE, DAZED, DYING, GONE
+        EMERGE, ROAM, VOLLEY, JUMP_WIND, JUMP_AIR, JUMP_LAND, DIVE, TUNNEL, SURFACE, DAZED, DYING, GONE
     }
 
     private static final double ACCEL = 3.2, STRIDE = 13;
@@ -50,14 +53,21 @@ public class LitterBeast extends Entity implements TrashBoss {
     private static final double[] SPEED = {28, 34, 42};
     /** Within this distance (px) it stops wandering and chases the player. */
     public static final double CHASE_RANGE = 130;
-    /** Seconds between garbage-bag spews, and before the first one after it rises. */
-    public static final double THROW_INTERVAL = 14, FIRST_THROW_DELAY = 4;
+    /** Seconds before the first spike volley after it rises. */
+    public static final double FIRST_THROW_DELAY = 4;
+    /** Seconds between spike volleys, per phase. */
+    private static final double[] VOLLEY_EVERY = {12, 10, 8};
     private static final double CONTACT_RANGE = 20;
-    private static final double SPEW_TIME = 1.05, SPEW_RELEASE = 0.42;
-    // pounce
-    private static final double POUNCE_WIND = 0.8, FRENZY_WIND = 0.45, POUNCE_LUNGE = 0.32, POUNCE_LAND = 0.35;
-    private static final double POUNCE_RANGE = 120, POUNCE_MIN = 40, POUNCE_LEN = 96;
-    private static final double[] POUNCE_EVERY = {7, 6, 4.5};
+    // spike volley: total time, first bottle fired at, gap between bottles, flight time per phase
+    private static final double VOLLEY_TIME = 1.3, VOLLEY_RELEASE = 0.5, VOLLEY_GAP = 0.13;
+    private static final double[] SPIKE_FLIGHT = {1.15, 1.05, 0.95};
+    private static final int SPIKES = 5;
+    /** Seconds for a fired bottle to rise back out of its back. */
+    public static final double SPIKE_REGROW = 6;
+    // jump: crouch (the landing ring follows the player for the first half), flight, recovery
+    private static final double JUMP_WIND = 0.9, FRENZY_WIND = 0.6, JUMP_AIR = 0.75, JUMP_LAND = 0.5;
+    private static final double JUMP_RANGE = 150, JUMP_MIN = 30, JUMP_RADIUS = 20, JUMP_HEIGHT = 46;
+    private static final double[] JUMP_EVERY = {7, 6, 4.5};
     // leaf burrow
     private static final double DIVE_TIME = 0.6, TUNNEL_CHASE = 2.2, WARN_TIME = 0.65, SURFACE_TIME = 0.45;
     private static final double BURROW_EVERY = 13, MOUND_SPEED = 52, BURST_RADIUS = 16;
@@ -87,13 +97,15 @@ public class LitterBeast extends Entity implements TrashBoss {
     private boolean hasTarget;
     private double walkPhase, walkBlend, flip = -1, look;
     private int facing = -1;
-    private double throwTimer = FIRST_THROW_DELAY, pounceTimer = 5, burrowTimer = 4;
+    private double throwTimer = FIRST_THROW_DELAY, jumpTimer = 5, burrowTimer = 4;
     private boolean burstDone;
     private double leafClock;
-    /** Pounce: start position and total displacement of the lunge; pounces left in this frenzy chain. */
-    private double lungeX, lungeY, lungeDX, lungeDY;
-    private int pouncesLeft;
-    private double windDuration = POUNCE_WIND;
+    /** Jump: take-off position, landing spot (feet), current height; jumps left in this frenzy chain. */
+    private double jumpSX, jumpSY, jumpTX, jumpTY, jumpZ;
+    private int jumpsLeft;
+    private double windDuration = JUMP_WIND;
+    /** Spike volley: growth of each bottle on its back, 0 (just fired) .. 1 (ready). */
+    private final double[] spikeGrow = {1, 1, 1, 1, 1};
     private Player target;
 
     public LitterBeast(double x, double y) { super(x, y, 28, 24); }
@@ -106,13 +118,13 @@ public class LitterBeast extends Entity implements TrashBoss {
     }
     @Override public String phaseMessage(int phase) {
         return phase == 2 ? "PHASE 2: The Litter Beast is weakening... now it burrows under the leaves! Watch for the ring."
-                : "PHASE 3: FRENZY! The Litter Beast pounces twice in a row - finish it!";
+                : "PHASE 3: FRENZY! The Litter Beast jumps twice in a row - finish it!";
     }
     @Override public String defeatMessage() { return "The park is clean - the Litter Beast is defeated!"; }
     @Override public Intro intro() {
         return new Intro("SOMETHING IS RUSTLING IN THE LEAVES", "THE LEAF PILE IS MOVING",
                 "Every scrap of park litter is calling it...", "THE LITTER BEAST",
-                "IT POUNCES, BURROWS AND SPEWS TRASH!", 0xE9A04A);
+                "IT JUMPS, BURROWS AND SHOOTS ITS SPIKES!", 0xE9A04A);
     }
 
     @Override public void syncHp(int trashLeft) {
@@ -124,10 +136,10 @@ public class LitterBeast extends Entity implements TrashBoss {
     @Override public boolean isEmerging() { return state == State.EMERGE; }
     @Override public boolean isDying() { return state == State.DYING || state == State.GONE; }
     @Override public boolean isGone() { return state == State.GONE; }
-    /** Touching it hurts while it prowls, spews or pounces; not while burrowed, surfacing or dazed. */
+    /** Touching it hurts while it prowls, shoots or crouches to jump; not mid-air, burrowed, surfacing or dazed. */
     @Override public boolean isDangerous() {
         return switch (state) {
-            case ROAM, SPEW, POUNCE_WIND, POUNCE_LUNGE, POUNCE_LAND -> true;
+            case ROAM, VOLLEY, JUMP_WIND, JUMP_LAND -> true;
             default -> false;
         };
     }
@@ -146,7 +158,7 @@ public class LitterBeast extends Entity implements TrashBoss {
     @Override public double[] knockBack(Player p) {
         double dx = p.centerX() - centerX(), dy = p.centerY() - centerY();
         double len = Math.max(0.001, Math.hypot(dx, dy));
-        double force = state == State.POUNCE_LUNGE ? 22 : 16;
+        double force = state == State.JUMP_LAND ? 22 : 16;
         return new double[] { dx / len * force, dy / len * force };
     }
 
@@ -162,18 +174,24 @@ public class LitterBeast extends Entity implements TrashBoss {
         flip += Math.signum(facing - flip) * Math.min(Math.abs(facing - flip), TURN_RATE * dt);
         double toPlayer = player.centerX() - centerX();
         look += ((Math.max(-1, Math.min(1, toPlayer * facing / 40.0))) - look) * Math.min(1, dt * 5);
+        for (int i = 0; i < SPIKES; i++) {           // fired bottles slowly push back out
+            if (spikeGrow[i] < 1 && !(state == State.VOLLEY && spikeGrow[i] == 0))
+                spikeGrow[i] = Math.min(1, spikeGrow[i] + dt / SPIKE_REGROW);
+        }
 
         switch (state) {
             case EMERGE -> updateEmerge(dt);
             case ROAM -> updateRoam(dt, level, toPlayer);
-            case SPEW -> updateSpew(dt, level);
-            case POUNCE_WIND -> updatePounceWind(dt, level);
-            case POUNCE_LUNGE -> updateLunge(dt, level);
-            case POUNCE_LAND -> {
+            case VOLLEY -> updateVolley(dt, level);
+            case JUMP_WIND -> updateJumpWind(dt, level);
+            case JUMP_AIR -> updateJumpAir(level);
+            case JUMP_LAND -> {
                 brake(dt, level);
-                if (stateTime >= POUNCE_LAND) {
-                    if (pouncesLeft > 0) startPounce(FRENZY_WIND);
-                    else setState(State.ROAM);
+                if (stateTime >= JUMP_LAND) {
+                    if (jumpsLeft > 0) {
+                        jumpsLeft--;
+                        if (!startJump(FRENZY_WIND, level)) setState(State.ROAM);
+                    } else setState(State.ROAM);
                 }
             }
             case DIVE -> updateDive();
@@ -212,14 +230,14 @@ public class LitterBeast extends Entity implements TrashBoss {
     private void updateRoam(double dt, Level level, double toPlayer) {
         int phase = core.phase();
         throwTimer -= dt;
-        pounceTimer -= dt;
+        jumpTimer -= dt;
         if (phase >= 2) burrowTimer -= dt;
         double dist = Math.hypot(target.centerX() - centerX(), target.centerY() - centerY());
 
-        if (throwTimer <= 0) {
-            throwTimer = THROW_INTERVAL;
+        if (throwTimer <= 0 && spikesReady()) {
+            throwTimer = VOLLEY_EVERY[phase - 1];
             if (Math.abs(toPlayer) > 4) facing = toPlayer > 0 ? 1 : -1;   // turns to face its target
-            setState(State.SPEW);
+            setState(State.VOLLEY);
             return;
         }
         if (phase >= 2 && burrowTimer <= 0) {
@@ -227,11 +245,10 @@ public class LitterBeast extends Entity implements TrashBoss {
             startDive();
             return;
         }
-        if (pounceTimer <= 0 && dist < POUNCE_RANGE && dist > POUNCE_MIN) {
-            pounceTimer = POUNCE_EVERY[phase - 1];
-            pouncesLeft = phase == 3 ? 1 : 0;      // frenzy: a second pounce right after
-            startPounce(POUNCE_WIND);
-            return;
+        if (jumpTimer <= 0 && dist < JUMP_RANGE && dist > JUMP_MIN) {
+            jumpTimer = JUMP_EVERY[phase - 1];
+            jumpsLeft = phase == 3 ? 1 : 0;        // frenzy: a second jump right after
+            if (startJump(JUMP_WIND, level)) return;
         }
 
         // steering: chase the player when close, otherwise wander, slow down on arrival, look around
@@ -301,76 +318,92 @@ public class LitterBeast extends Entity implements TrashBoss {
         return level.isBlocked(new Rectangle2D.Double(nx + 6, ny + h - 9, w - 12, 9));
     }
 
-    private void updateSpew(double dt, Level level) {
+    /**
+     * Shakes its back, then fires the spine bottles one after another: the first at where the
+     * player is heading (it bursts into trash), the rest at spots around them.
+     */
+    private void updateVolley(double dt, Level level) {
         brake(dt, level);
-        double before = stateTime - dt;
-        if (before < SPEW_RELEASE && stateTime >= SPEW_RELEASE) {   // the bag flies out of its mouth
-            double mx = centerX() + 22 * flip, my = y + h - 2;
-            core.throwAtPlayer(mx, y + 4, target, 0.55, 1.05, 46);
-            fx.burst(BossParticles.BIT, mx, my, 16, 5, 40, 50, 1.2, TRASH_COLS);
-            fx.burst(BossParticles.LEAF, mx, my, 14, 5, 30, 30, 1.3, LEAF_COLS);
-            fx.burst(BossParticles.PUFF, mx, my, 12, 4, 20, 8, 0.6, DUST);
+        int phase = core.phase();
+        for (int i = 0; i < SPIKES; i++) {
+            double at = VOLLEY_RELEASE + i * VOLLEY_GAP;
+            if (spikeGrow[i] < 1 || stateTime < at) continue;
+            spikeGrow[i] = 0;                    // the bottle leaves its back
+            double sx = centerX() + (-9 + i * 4.5) * flip, sy = y + h - 30;
+            double[] t = i == 0 ? core.leadTarget(target, 0.55, 0, 0)
+                    : core.leadTarget(target, 0.3, rng.nextGaussian() * 26, rng.nextGaussian() * 16);
+            Strike hit = new Strike(0, 0, TOSS_RADIUS + 2, true, 0, 0, i == 0 ? 1 : 0,
+                    "A bottle spike hit you! -1 HP");
+            core.throwAt(sx, sy, t[0], t[1], SPIKE_FLIGHT[phase - 1] + i * 0.06, 58, BossCore.BOTTLE, hit);
+            fx.burst(BossParticles.SPARK, sx, y + h, 30, 4, 25, 20, 0.4, new int[] {0xD2F0FF, 0x76BCE2});
+            fx.burst(BossParticles.LEAF, sx, y + h, 26, 3, 25, 20, 1.0, LEAF_COLS);
         }
-        if (stateTime >= SPEW_TIME) setState(State.ROAM);
+        if (stateTime >= VOLLEY_TIME) setState(State.ROAM);   // its back is bare; the bottles rise back
     }
 
-    // ---- pounce
-    private void startPounce(double windTime) {
-        if (pouncesLeft > 0 && state == State.POUNCE_LAND) pouncesLeft--;
-        setState(State.POUNCE_WIND);
+    private boolean spikesReady() {
+        for (double g : spikeGrow) if (g < 1) return false;
+        return true;
+    }
+
+    // ---- jump
+    /** Crouches to jump at the player. False (and no jump) when there is nowhere to land near them. */
+    private boolean startJump(double windTime, Level level) {
+        if (!aimJump(level)) return false;
+        setState(State.JUMP_WIND);
         windDuration = windTime;
-        aimPounce();
+        return true;
     }
 
-    /** Points the lunge at the player (it keeps tracking for the first half of the wind-up). */
-    private void aimPounce() {
-        double dx = target.centerX() - centerX(), dy = target.centerY() - centerY();
-        double d = Math.max(0.001, Math.hypot(dx, dy));
-        double len = Math.min(POUNCE_LEN, d + 18);
-        lungeDX = dx / d * len;
-        lungeDY = dy / d * len;
-        if (Math.abs(dx) > 3) facing = dx > 0 ? 1 : -1;
-    }
-
-    private void updatePounceWind(double dt, Level level) {
-        brake(dt, level);
-        if (stateTime < windDuration * 0.5) aimPounce();
-        if (stateTime >= windDuration) {
-            lungeX = x;
-            lungeY = y;
-            setState(State.POUNCE_LUNGE);
-            fx.burst(BossParticles.PUFF, centerX(), y + h, 0, 5, 24, 4, 0.5, DUST);
-        }
-    }
-
-    private void updateLunge(double dt, Level level) {
-        double k = easeOut(stateTime / POUNCE_LUNGE);
-        double nx = lungeX + lungeDX * k, ny = lungeY + lungeDY * k;
-        // step in small pieces so it cannot pass through a thin bench or tree trunk
-        int steps = (int) Math.ceil(Math.max(Math.abs(nx - x), Math.abs(ny - y)) / 3) + 1;
-        double sx = (nx - x) / steps, sy = (ny - y) / steps;
-        for (int i = 0; i < steps; i++) {
-            if (blocked(level, x + sx, y + sy)) {   // slammed into something: dazed
-                vx = vy = 0;
-                fx.burst(BossParticles.PUFF, centerX() + flip * 12, y + h - 8, 6, 8, 30, 8, 0.6, DUST);
-                fx.burst(BossParticles.LEAF, centerX() + flip * 12, y + h - 8, 12, 8, 40, 40, 1.4, LEAF_COLS);
-                pouncesLeft = 0;
-                setState(State.DAZED);
-                return;
+    /**
+     * Puts the landing spot on the player's feet (or the nearest clear spot on the way there).
+     * It keeps tracking for the first half of the crouch, then the ring stays put.
+     */
+    private boolean aimJump(Level level) {
+        double px = target.centerX(), py = target.getY() + Player.H - 3;
+        double sx = centerX(), sy = y + h;
+        for (int i = 0; i <= 6; i++) {
+            double k = 1 - i / 8.0;
+            double tx = sx + (px - sx) * k, ty = sy + (py - sy) * k;
+            if (!blocked(level, tx - w / 2.0, ty - h)) {
+                jumpTX = tx;
+                jumpTY = ty;
+                if (Math.abs(tx - sx) > 3) facing = tx > sx ? 1 : -1;
+                return true;
             }
-            x += sx;
-            y += sy;
         }
-        vx = lungeDX / POUNCE_LUNGE * (1 - k);
-        vy = lungeDY / POUNCE_LUNGE * (1 - k);
-        walkPhase += Math.hypot(sx, sy) * steps / STRIDE * 0.6;
-        walkBlend = 1;
-        if (rng.nextDouble() < dt * 30)
-            fx.add(BossParticles.LEAF, centerX() - flip * 10, y + h, 2, -lungeDX * 0.3, -lungeDY * 0.3, 20, 1.0,
-                    LEAF_COLS[rng.nextInt(LEAF_COLS.length)], 2);
-        if (stateTime >= POUNCE_LUNGE) {
-            setState(State.POUNCE_LAND);
-            fx.burst(BossParticles.PUFF, centerX(), y + h, 0, 6, 26, 4, 0.5, DUST);
+        return false;
+    }
+
+    private void updateJumpWind(double dt, Level level) {
+        brake(dt, level);
+        if (stateTime < windDuration * 0.5) aimJump(level);
+        if (stateTime >= windDuration) {
+            jumpSX = x;
+            jumpSY = y;
+            vx = vy = 0;
+            setState(State.JUMP_AIR);
+            fx.burst(BossParticles.PUFF, centerX(), y + h, 0, 6, 26, 6, 0.6, DUST);
+            fx.burst(BossParticles.LEAF, centerX(), y + h, 2, 8, 30, 30, 1.2, LEAF_COLS);
+        }
+    }
+
+    /** Arcs through the air (it ignores what is below) and crashes down on the marked spot. */
+    private void updateJumpAir(Level level) {
+        double k = Math.min(1, stateTime / JUMP_AIR);
+        double lx = jumpTX - w / 2.0, ly = jumpTY - h;
+        x = jumpSX + (lx - jumpSX) * ease(k);
+        y = jumpSY + (ly - jumpSY) * ease(k);
+        jumpZ = Math.sin(k * Math.PI) * JUMP_HEIGHT;
+        walkBlend = 0;
+        if (k >= 1) {
+            x = lx;
+            y = ly;
+            jumpZ = 0;
+            core.strike(new Strike(jumpTX, jumpTY, JUMP_RADIUS, true, 0, 0, 0, "The Litter Beast landed on you! -1 HP"));
+            fx.burst(BossParticles.PUFF, jumpTX, jumpTY, 1, 12, 40, 6, 0.8, DUST);
+            fx.burst(BossParticles.LEAF, jumpTX, jumpTY, 4, 18, 55, 60, 1.8, LEAF_COLS);
+            setState(State.JUMP_LAND);
         }
     }
 
@@ -423,7 +456,7 @@ public class LitterBeast extends Entity implements TrashBoss {
             fx.add(BossParticles.SPARK, centerX() + flip * 10 + rng.nextGaussian() * 4, y + h, 26, 0, 0, 6, 0.6, 0xFFF2A0, 1);
         }
         if (stateTime >= DAZE_TIME) {
-            pounceTimer = Math.max(pounceTimer, 2);   // gives the player a head start
+            jumpTimer = Math.max(jumpTimer, 2);       // gives the player a head start
             setState(State.ROAM);
         }
     }
@@ -463,6 +496,7 @@ public class LitterBeast extends Entity implements TrashBoss {
 
     private void defeat() {
         if (state == State.DYING || state == State.GONE) return;
+        jumpZ = 0;                               // drops out of the air where it is
         setState(State.DYING);
         vx = vy = 0;
         fx.burst(BossParticles.PUFF, centerX(), y + h - 8, 6, 8, 30, 6, 0.7, AIR);
@@ -483,6 +517,7 @@ public class LitterBeast extends Entity implements TrashBoss {
         p.eyes = (time % 3.7) < 0.13 ? 1 : 0;
         p.glow = 0.6;
         p.flies = p.stink = true;
+        for (int i = 0; i < SPIKES; i++) p.spikes[i] = ease(spikeGrow[i]);
         if (isDangerous() && core.phase() == 3) { p.eyes = 2; p.glow = 1; }
         // idle sniff: little snout twitches while standing
         if (walkBlend < 0.3 && state == State.ROAM)
@@ -507,19 +542,20 @@ public class LitterBeast extends Entity implements TrashBoss {
                     p.glow = 1;
                 }
             }
-            case SPEW -> {
-                double u = stateTime / SPEW_TIME;
-                double k1 = ease(span(u, 0, 0.38)), k2 = easeOut(span(u, 0.38, 0.5)), k3 = ease(span(u, 0.56, 1));
-                p.crouch = k1 * (1 - k2);
-                p.rear = k2 * (1 - k3);
-                p.jaw = Math.max(p.jaw, Math.max(0.3 * k1 * (1 - k2), k2 * (1 - k3)));
-                p.headDX = -2 * k1 * (1 - k2) + 3.5 * k2 * (1 - k3);
-                p.headDY = 2 * k1 * (1 - k2) - 2 * k2 * (1 - k3);
-                p.ear += -0.4 * k2 * (1 - k3);
-                p.shake = Math.sin(time * 70) * 0.8 * p.rear;
-                if (u > 0.15 && u < 0.85) { p.eyes = 2; p.glow = 1; }
+            case VOLLEY -> {            // hunches and rattles its spine, then jerks as each bottle fires
+                double u = stateTime / VOLLEY_TIME;
+                double wind = ease(span(stateTime, 0, VOLLEY_RELEASE));
+                double fire = span(stateTime, VOLLEY_RELEASE, VOLLEY_RELEASE + SPIKES * VOLLEY_GAP);
+                double rec = ease(span(u, 0.8, 1));
+                p.crouch = 0.8 * wind * (1 - rec);
+                p.headDX = -1.5 * wind * (1 - rec);
+                p.headDY = 2 * wind * (1 - rec);
+                p.ear = -0.5 * wind;
+                p.jaw = Math.max(p.jaw, 0.5 * wind * (1 - rec));
+                p.shake = Math.sin(time * 70) * (0.5 * wind * (1 - fire) + 0.9 * (fire > 0 && fire < 1 ? 1 : 0));
+                if (u < 0.9) { p.eyes = 2; p.glow = 1; }
             }
-            case POUNCE_WIND -> {       // crouch low and wiggle, ears back, glaring
+            case JUMP_WIND -> {         // crouch low and wiggle, ears back, glaring
                 double k = ease(stateTime / Math.min(0.35, windDuration));
                 p.crouch = k;
                 p.shake = Math.sin(time * 38) * 0.7 * k;
@@ -531,19 +567,24 @@ public class LitterBeast extends Entity implements TrashBoss {
                 p.eyes = 2;
                 p.glow = 1;
             }
-            case POUNCE_LUNGE -> {      // stretched out mid-leap, jaws wide
-                p.rear = 0.6;
-                p.headDX = 3.5;
-                p.headDY = -1;
+            case JUMP_AIR -> {          // stretched out mid-leap, legs tucked, jaws wide
+                double k = Math.min(1, stateTime / JUMP_AIR);
+                p.rear = 0.6 * (1 - k) + 0.1;
+                p.headDX = 3.5 * (1 - k);
+                p.headDY = -1 + 3 * k;
                 p.jaw = 1;
                 p.ear = -0.6;
+                p.legsFold = 0.5 * Math.sin(k * Math.PI);
+                p.walkAmt = 0;
                 p.eyes = 2;
                 p.glow = 1;
             }
-            case POUNCE_LAND -> {
-                double k = 1 - ease(stateTime / POUNCE_LAND);
-                p.crouch = 0.7 * k;
+            case JUMP_LAND -> {         // squashed flat by the landing, springs back up
+                double k = 1 - ease(stateTime / JUMP_LAND);
+                p.crouch = k;
+                p.shake = Math.sin(time * 60) * 0.6 * k;
                 p.jaw = Math.max(p.jaw, 0.5 * k);
+                p.walkAmt = 0;
             }
             case DIVE -> {
                 p.crouch = 1;
@@ -621,11 +662,12 @@ public class LitterBeast extends Entity implements TrashBoss {
         else if (state == State.SURFACE) drawInPile(g, ax, gy, easeOut(stateTime / (SURFACE_TIME * 0.6)),
                 0.8 * (1 - ease(stateTime / SURFACE_TIME)), false);
         else {
-            double shadowW = 30 + pose.deflate * 8 - pose.rear * 4;
+            double air = state == State.JUMP_AIR ? jumpZ / JUMP_HEIGHT : 0;   // shadow shrinks as it rises
+            double shadowW = (30 + pose.deflate * 8 - pose.rear * 4) * (1 - 0.45 * air);
             int sa = state == State.DYING ? (int) (70 * (1 - span(stateTime, DEATH_TIME, DEATH_TIME + FADE_TIME))) : 70;
-            g.setColor(new Color(0, 0, 0, sa));
+            g.setColor(new Color(0, 0, 0, (int) (sa * (1 - 0.4 * air))));
             g.fillOval((int) Math.round(ax - shadowW / 2 + 2 * flip), (int) Math.round(gy - 3), (int) shadowW, 6);
-            canvas.drawTo(g, ax, gy, LitterBeastArt.AX, LitterBeastArt.GROUND, flip);
+            canvas.drawTo(g, ax, gy - (state == State.JUMP_AIR ? jumpZ : 0), LitterBeastArt.AX, LitterBeastArt.GROUND, flip);
             if (state == State.DAZED) drawStars(g, ax + flip * 12, gy - 40);
         }
         fx.draw(g);
@@ -693,25 +735,26 @@ public class LitterBeast extends Entity implements TrashBoss {
         pile.outline(0x1E1208);
     }
 
-    /** Telegraphs (pounce path, burrow warning ring), bags in flight and HP numbers, above everything. */
+    /** Telegraphs (jump landing ring, burrow warning ring), spikes in flight and HP numbers, above everything. */
     @Override
     public void drawEffects(Graphics2D g) {
         Graphics2D gg = (Graphics2D) g.create();
         gg.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        if (state == State.POUNCE_WIND) {
-            double k = Math.min(1, stateTime / windDuration);
-            double pulse = 0.5 + 0.5 * Math.sin(time * 22);
-            double sx = centerX(), sy = y + h - 4, ex = sx + lungeDX, ey = sy + lungeDY;
-            gg.setStroke(new BasicStroke(9f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-            gg.setColor(new Color(220, 40, 30, (int) (40 + 50 * k)));
-            gg.drawLine((int) sx, (int) sy, (int) ex, (int) ey);
-            gg.setStroke(new BasicStroke(1.3f));
-            gg.setColor(new Color(255, 70, 50, (int) (130 + 110 * pulse * k)));
-            gg.drawLine((int) sx, (int) sy, (int) ex, (int) ey);
-            double ang = Math.atan2(ey - sy, ex - sx);             // arrow head
-            int[] axs = { (int) ex, (int) (ex - Math.cos(ang - 0.5) * 7), (int) (ex - Math.cos(ang + 0.5) * 7) };
-            int[] ays = { (int) ey, (int) (ey - Math.sin(ang - 0.5) * 7), (int) (ey - Math.sin(ang + 0.5) * 7) };
-            gg.fillPolygon(axs, ays, 3);
+        if (state == State.JUMP_WIND || state == State.JUMP_AIR) {   // where it will land
+            double total = windDuration + JUMP_AIR;
+            double t = state == State.JUMP_WIND ? stateTime : windDuration + stateTime;
+            double k = Math.min(1, t / total);
+            boolean locked = state == State.JUMP_AIR || stateTime >= windDuration * 0.5;
+            double pulse = 0.5 + 0.5 * Math.sin(time * (locked ? 26 : 14));
+            int cx = (int) Math.round(jumpTX), cy = (int) Math.round(jumpTY);
+            int r = (int) Math.round(JUMP_RADIUS), fill = (int) (r * k);
+            gg.setColor(new Color(200, 30, 30, (int) (40 + 80 * k)));
+            gg.fillOval(cx - fill, cy - fill / 2, fill * 2, fill);
+            gg.setStroke(new BasicStroke(locked ? 1.6f : 1.1f));
+            gg.setColor(new Color(255, 60, 50, (int) (130 + 120 * pulse)));
+            gg.drawOval(cx - r, cy - r / 2, r * 2, r);
+            gg.drawLine(cx - 3, cy, cx + 3, cy);                    // crosshair
+            gg.drawLine(cx, cy - 2, cx, cy + 2);
         }
         if (state == State.TUNNEL && stateTime >= TUNNEL_CHASE) {   // where it will burst up
             double k = Math.min(1, (stateTime - TUNNEL_CHASE) / WARN_TIME);

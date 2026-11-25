@@ -26,6 +26,9 @@ import static com.ecoquest.level1.Config.*;
  *       trash is gone, it dies.</li>
  *   <li>It slowly follows the player and every {@value #THROW_INTERVAL} seconds throws a garbage
  *       bag at a telegraphed spot. The bag bursts into new trash, so each throw heals it 1 HP.</li>
+ *   <li>Body stomp: when the player gets within {@value #STOMP_TRIGGER} px it rears up while a red
+ *       ring marks the ground around it, then slams its whole body down ({@value #STOMP_WIND} s to
+ *       step out). A hit costs 1 HP and slows the player.</li>
  *   <li>Phase 2 ({@value #PHASE_2_HP} HP or less): walks faster.
  *       Phase 3 ({@value #PHASE_3_HP} HP or less): enraged, leaves a slowing toxic slime trail.</li>
  * </ul>
@@ -36,7 +39,7 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
     /** Seconds between garbage-bag throws (counted from the start of one throw to the next). */
     public static final double THROW_INTERVAL = 10;
 
-    private enum State { EMERGE, CHASE, TOSS, DYING, GONE }
+    private enum State { EMERGE, CHASE, TOSS, STOMP, DYING, GONE }
 
     private static final int SPRITE_W = TrashMonsterArt.W, SPRITE_H = TrashMonsterArt.H;
 
@@ -54,20 +57,28 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
     private static final double DEATH_SECONDS = Anim.DEFEAT.duration() + DEATH_FADE_SECONDS;
     private static final double LEAD_SECONDS = 0.55;
 
+    // body stomp: trigger distance (feet to feet), wind-up before the slam, total time, hit radius
+    public static final double STOMP_TRIGGER = 26, STOMP_WIND = 0.65;
+    private static final double STOMP_TIME = 1.0, STOMP_RADIUS = 28, STOMP_SLOW = 1.2, STOMP_WAVE_SECONDS = 0.4;
+
     // per-phase tuning, index = phase - 1
     private static final double[] CHASE_SPEED = { 28, 34, 42 };
+    /** Seconds between stomps, per phase. */
+    private static final double[] STOMP_COOLDOWN = { 4.5, 3.5, 2.6 };
 
     private final List<Toss> tosses = new ArrayList<>();
     private final List<double[]> splats = new ArrayList<>();      // x, y, age
     private final List<double[]> landed = new ArrayList<>();      // x, y (consumed by the game panel)
     private final List<Floater> floaters = new ArrayList<>();     // "+1" / "-1" above its head
+    private final List<Strike> stompStrikes = new ArrayList<>();  // consumed by the game panel
 
     private State state = State.EMERGE;
     private int hp = -1, peakHp = 1;
     private int reportedPhase = 1;
     private double stateTime, animTime, hitFlash, healFlash;
     private double tossTimer = FIRST_THROW_DELAY, slimeTimer;
-    private boolean tossReleased, moving, facingLeft, defeatedPending, tossPending;
+    private double stompTimer = 1.5, stompWaveAge = -1, stompX, stompY;
+    private boolean tossReleased, stompLanded, moving, facingLeft, defeatedPending, tossPending;
     private int phaseChangePending, hpChangePending;
     private double lastPlayerX = Double.NaN, lastPlayerY, playerVX, playerVY;
 
@@ -83,14 +94,14 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
         return "The TRASH MONSTER burst out of the road! Its life is the trash left - sort every piece to beat it!";
     }
     @Override public String phaseMessage(int phase) {
-        return phase == 2 ? "PHASE 2: The Trash Monster is weakening... and getting faster!"
+        return phase == 2 ? "PHASE 2: The Trash Monster is weakening... faster, and stomping more often!"
                 : "PHASE 3: ENRAGED! It leaves a toxic slime trail - finish it!";
     }
     @Override public String defeatMessage() { return "The street is clean - the Trash Monster is defeated!"; }
     @Override public Intro intro() {
         return new Intro("SOMETHING IS STIRRING UNDER THE ROAD", "THE ROAD IS CRACKING",
                 "All the trash on this street is coming alive...", "THE TRASH MONSTER",
-                "IT HURLS GARBAGE BAGS - DODGE THE RED RINGS!", 0x8FD46A);
+                "IT HURLS BAGS AND STOMPS - DODGE THE RED RINGS!", 0x8FD46A);
     }
 
     // ------------------------------------------------------------ queries
@@ -105,7 +116,7 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
     public double getHitFlash() { return hitFlash; }
     public double getHealFlash() { return healFlash; }
     /** True while touching the monster hurts (not while rising or dying). */
-    public boolean isDangerous() { return state == State.CHASE || state == State.TOSS; }
+    public boolean isDangerous() { return state == State.CHASE || state == State.TOSS || state == State.STOMP; }
 
     /** Distance from the monster's body to the player's center. */
     public double distanceTo(Player player) {
@@ -128,6 +139,8 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
         List<Strike> out = new ArrayList<>();
         for (double[] spot : landed) out.add(Strike.bag(spot[0], spot[1]));
         landed.clear();
+        out.addAll(stompStrikes);
+        stompStrikes.clear();
         return out;
     }
     /** True once per garbage bag thrown (for its sound effect). */
@@ -161,6 +174,8 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
         reportedPhase = phase;
         if (hp == 0 && state != State.EMERGE) {
             tosses.clear();
+            stompStrikes.clear();
+            stompWaveAge = -1;
             defeatedPending = true;
             enter(State.DYING);
         }
@@ -174,6 +189,7 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
         healFlash = Math.max(0, healFlash - dt);
         trackPlayer(dt, player);
         updateTosses(dt);
+        if (stompWaveAge >= 0 && (stompWaveAge += dt) >= STOMP_WAVE_SECONDS) stompWaveAge = -1;
         int p = getPhase() - 1;
 
         switch (state) {
@@ -185,6 +201,12 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
                 break;
             case CHASE:
                 tossTimer -= dt;
+                stompTimer -= dt;
+                if (stompTimer <= 0 && feetDistanceTo(player) <= STOMP_TRIGGER) {
+                    stompTimer = STOMP_COOLDOWN[p];
+                    startStomp(player);
+                    break;
+                }
                 chase(dt, player, level, CHASE_SPEED[p]);
                 if (p == 2) dropSlime(dt, level);
                 if (tossTimer <= 0) {
@@ -201,6 +223,15 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
                     tossReleased = true;
                 }
                 if (stateTime >= TOSS_ANIM_SECONDS) enter(State.CHASE);
+                break;
+            case STOMP:
+                if (!stompLanded && stateTime >= STOMP_WIND) {   // the body slams down
+                    stompLanded = true;
+                    stompWaveAge = 0;
+                    stompStrikes.add(new Strike(stompX, stompY, STOMP_RADIUS, true, STOMP_SLOW, 0, 0,
+                            "The Trash Monster stomped on you! -1 HP"));
+                }
+                if (stateTime >= STOMP_TIME) enter(State.CHASE);
                 break;
             case DYING:
                 if (stateTime >= DEATH_SECONDS) enter(State.GONE);
@@ -248,6 +279,21 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
         if (!level.isBlocked(feetAt(x, y + my))) { y += my; moving |= Math.abs(my) > 0.01; }
     }
 
+    /** Rears up over its feet; the slam lands {@value #STOMP_WIND} s later on the spot marked now. */
+    private void startStomp(Player player) {
+        moving = false;
+        stompLanded = false;
+        stompX = bodyX();
+        stompY = feetY();
+        if (Math.abs(player.centerX() - bodyX()) > 4) facingLeft = player.centerX() < bodyX();
+        enter(State.STOMP);
+    }
+
+    /** Distance from its feet to the player's feet. */
+    private double feetDistanceTo(Player player) {
+        return Math.hypot(bodyX() - player.centerX(), feetY() - (player.y + Player.H - 3));
+    }
+
     private void dropSlime(double dt, Level level) {
         slimeTimer -= dt;
         if (slimeTimer > 0) return;
@@ -278,6 +324,7 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
     // ------------------------------------------------------------ geometry
     private double bodyX() { return x + SPRITE_W / 2.0; }
     private double bodyY() { return y + 28; }
+    private double feetY() { return y + SPRITE_H - 4; }
 
     /** Small collision box at the monster's feet, so it fits down the two-tile streets. */
     private Rectangle2D.Double feetAt(double nx, double ny) {
@@ -300,6 +347,7 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
 
         if (state == State.EMERGE) drawEmerge(gg, dx, dy);
         else if (state == State.DYING) drawDying(gg, dx, dy);
+        else if (state == State.STOMP) drawStomp(gg, dx, dy);
         else blit(gg, currentFrame(), dx, dy);
         gg.dispose();
     }
@@ -308,6 +356,33 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
     private void blit(Graphics2D g, BufferedImage frame, int dx, int dy) {
         if (facingLeft) g.drawImage(frame, dx + SPRITE_W, dy, -SPRITE_W, SPRITE_H, null);
         else g.drawImage(frame, dx, dy, null);
+    }
+
+    /** Rears up and stretches during the wind-up, then slams down and squashes flat. */
+    private void drawStomp(Graphics2D g, int dx, int dy) {
+        double lift, squash;
+        if (stateTime < STOMP_WIND) {
+            double k = ease(stateTime / STOMP_WIND);
+            lift = 9 * k;
+            squash = -0.12 * k + Math.sin(animTime * 40) * 0.02 * k;   // tall and trembling
+        } else {
+            double k = (stateTime - STOMP_WIND) / (STOMP_TIME - STOMP_WIND);
+            lift = 0;
+            squash = 0.22 * Math.exp(-k * 5) * Math.cos(k * 9);         // flattens, then springs back
+        }
+        double sx = 1 + squash, sy = 1 - squash;
+        int w = (int) Math.round(SPRITE_W * sx), h = (int) Math.round(SPRITE_H * sy);
+        int left = dx + (SPRITE_W - w) / 2, top = dy + SPRITE_H - h - (int) Math.round(lift);
+        Anim anim = stateTime < STOMP_WIND ? Anim.ROAR : Anim.IDLE;
+        BufferedImage frame = TrashMonsterArt.frame(anim, animTime, stompVariant());
+        if (facingLeft) g.drawImage(frame, left + w, top, -w, h, null);
+        else g.drawImage(frame, left, top, w, h, null);
+    }
+
+    private int stompVariant() {
+        if (hitFlash > 0 && ((int) (hitFlash * 20)) % 2 == 0) return TrashMonsterArt.WHITE;
+        if (stateTime < STOMP_WIND && ((int) (stateTime * 10)) % 2 == 0) return TrashMonsterArt.RED;
+        return TrashMonsterArt.NORMAL;
     }
 
     private BufferedImage currentFrame() {
@@ -400,6 +475,35 @@ public class TrashMonsterBoss extends Entity implements TrashBoss {
             for (int i = 0; i < 8; i++) {
                 double a = i * Math.PI / 4;
                 gg.fillRect((int) (s[0] + Math.cos(a) * r * 1.1), (int) (s[1] + Math.sin(a) * r * 0.55) - (int) (6 * Math.sin(k * Math.PI)), 2, 2);
+            }
+        }
+
+        if (state == State.STOMP && !stompLanded) {     // where the body will slam down
+            double k = Math.min(1, stateTime / STOMP_WIND);
+            double pulse = 0.5 + 0.5 * Math.sin(stateTime * 22);
+            int r = (int) STOMP_RADIUS, cx = (int) Math.round(stompX), cy = (int) Math.round(stompY);
+            int fill = (int) (r * k);
+            gg.setColor(new Color(200, 30, 30, (int) (40 + 80 * k)));
+            gg.fillOval(cx - fill, cy - fill / 2, fill * 2, fill);
+            gg.setStroke(new BasicStroke(1.4f));
+            gg.setColor(new Color(255, 60, 50, (int) (150 + 100 * pulse)));
+            gg.drawOval(cx - r, cy - r / 2, r * 2, r);
+        }
+        if (stompWaveAge >= 0) {                         // shockwave and flying debris after the slam
+            double k = stompWaveAge / STOMP_WAVE_SECONDS;
+            int r = (int) (STOMP_RADIUS * (0.7 + 0.6 * k)), cx = (int) Math.round(stompX), cy = (int) Math.round(stompY);
+            gg.setStroke(new BasicStroke(3f));
+            gg.setColor(new Color(150, 130, 90, (int) (170 * (1 - k))));
+            gg.drawOval(cx - r, cy - r / 2, r * 2, r);
+            gg.setStroke(new BasicStroke(1f));
+            gg.setColor(new Color(240, 225, 180, (int) (220 * (1 - k))));
+            gg.drawOval(cx - r, cy - r / 2, r * 2, r);
+            gg.setColor(new Color(110, 96, 70, (int) (230 * (1 - k))));
+            for (int i = 0; i < 12; i++) {
+                double a = i * Math.PI / 6;
+                int px = cx + (int) (Math.cos(a) * r * 0.8);
+                int py = cy + (int) (Math.sin(a) * r * 0.4) - (int) (Math.sin(k * Math.PI) * 9);
+                gg.fillRect(px, py, 2, 2);
             }
         }
 
