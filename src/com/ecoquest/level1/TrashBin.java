@@ -13,6 +13,14 @@ public class TrashBin extends Entity {
         this.type = type;
     }
 
+    /** A bin placed at exact world pixels instead of on the tile grid. */
+    public static TrashBin atPixel(GarbageType type, double x, double y) {
+        TrashBin bin = new TrashBin(type, 0, 0);
+        bin.x = x;
+        bin.y = y;
+        return bin;
+    }
+
     public GarbageType getType() { return type; }
     public void setHighlighted(boolean h) { this.highlighted = h; }
 

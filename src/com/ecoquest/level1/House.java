@@ -2,7 +2,11 @@ package com.ecoquest.level1;
 
 import java.awt.Graphics2D;
 
-/** A suburban house (roof on top, wall + door + windows below). Fully solid. */
+/**
+ * A suburban house (roof on top, wall + door + windows below). Solid except the top
+ * {@value #WALK_BEHIND} px of the roof, so the player can walk along the back of a house
+ * (and is drawn behind the roof) instead of squeezing through one-player-wide gaps.
+ */
 public class House extends Prop {
 
     public enum Style {
@@ -14,6 +18,7 @@ public class House extends Prop {
     }
 
     public static final int HEIGHT = 56;
+    static final int WALK_BEHIND = 10;
     private static final int ROOF_H = 34;
     private static final int GARAGE_W = 22;
 
@@ -34,6 +39,15 @@ public class House extends Prop {
     public int doorTileCol() { return doorX() / Config.TILE; }
     public int baseY()       { return (int) y + h; }
     public int doorPixelX()  { return doorX(); }
+    public boolean hasGarage() { return garage; }
+    /** Left pixel of the garage door (only meaningful when {@link #hasGarage()}). */
+    public int garagePixelX() { return (int) x + w - GARAGE_W + 1; }
+    public int garagePixelW() { return GARAGE_W - 4; }
+
+    @Override
+    public java.awt.geom.Rectangle2D.Double collisionBox() {
+        return new java.awt.geom.Rectangle2D.Double(x, y + WALK_BEHIND, w, h - WALK_BEHIND);
+    }
 
     @Override
     public void draw(Graphics2D g) {

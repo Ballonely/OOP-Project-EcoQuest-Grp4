@@ -26,6 +26,24 @@ public class InputHandler extends MouseAdapter implements KeyListener, MouseMoti
     private boolean mouseClicked;
     private volatile boolean mousePressed;
 
+    // Maps physical panel pixels to the fixed logical resolution (see setViewTransform).
+    private volatile double viewScale = 1.0;
+    private volatile double viewOffsetX;
+    private volatile double viewOffsetY;
+
+    /**
+     * Sets how the logical canvas is placed inside the panel, so mouse events
+     * are reported in logical coordinates regardless of the window size.
+     */
+    public void setViewTransform(double scale, double offsetX, double offsetY) {
+        viewScale = scale > 0 ? scale : 1.0;
+        viewOffsetX = offsetX;
+        viewOffsetY = offsetY;
+    }
+
+    private int toLogicalX(int x) { return (int) Math.floor((x - viewOffsetX) / viewScale); }
+    private int toLogicalY(int y) { return (int) Math.floor((y - viewOffsetY) / viewScale); }
+
     @Override
     public void keyPressed(KeyEvent e) {
         int code = e.getKeyCode();
@@ -47,22 +65,22 @@ public class InputHandler extends MouseAdapter implements KeyListener, MouseMoti
 
     @Override
     public void mouseMoved(MouseEvent e) {
-        mouseX = e.getX();
-        mouseY = e.getY();
+        mouseX = toLogicalX(e.getX());
+        mouseY = toLogicalY(e.getY());
     }
 
     @Override
     public void mouseDragged(MouseEvent e) {
-        mouseX = e.getX();
-        mouseY = e.getY();
+        mouseX = toLogicalX(e.getX());
+        mouseY = toLogicalY(e.getY());
     }
 
     @Override
     public synchronized void mousePressed(MouseEvent e) {
-        mouseX = e.getX();
-        mouseY = e.getY();
-        clickX = e.getX();
-        clickY = e.getY();
+        mouseX = toLogicalX(e.getX());
+        mouseY = toLogicalY(e.getY());
+        clickX = mouseX;
+        clickY = mouseY;
         mousePressed = true;
         mouseClicked = true;
     }

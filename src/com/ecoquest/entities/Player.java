@@ -35,7 +35,7 @@ public class Player extends GameObject {
     private int health = 100;
     private final int maxHealth = 100;
     private int score = 0;
-    private int cleanlinessLevel = 35; // percent, mirrors the HUD bar in the reference art
+    private int cleanlinessLevel = 0; // percent, mirrors the HUD bar in the reference art
     private int hurtCooldownMs = 0;
     private int animationRow = FRONT_WALK_ROW;
     private double walkFrameTimer = 0;

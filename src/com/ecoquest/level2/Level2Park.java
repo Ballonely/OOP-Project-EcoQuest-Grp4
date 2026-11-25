@@ -6,6 +6,7 @@ import com.ecoquest.level1.Level;
 import com.ecoquest.level1.Player;
 import com.ecoquest.level1.Prop;
 import com.ecoquest.level1.TrashBin;
+import com.ecoquest.level1.TrashBoss;
 
 import java.awt.Rectangle;
 import java.awt.geom.Rectangle2D;
@@ -14,11 +15,14 @@ import java.util.List;
 
 import static com.ecoquest.level1.Config.*;
 
+/**
+ * Level 2 - Public Park (boss: the Litter Beast), with the Level 1 rules: the boss rises at 75%
+ * clean, its life is the trash left, and the park is won once it is beaten and every piece is
+ * sorted. There is no time limit; the player loses only when their health runs out.
+ */
 public class Level2Park extends Level {
     public static final int GARBAGE_COUNT = 40;
-    public static final int TARGET_CLEANLINESS = 80;
-    public static final int BEAST_SPAWN_CLEANLINESS = 50;
-    public static final int TIME_LIMIT = 180;
+    /** Coins for defeating the Litter Beast, paid on top of the standard level-clear reward. */
     public static final int BEAST_REWARD = 150;
 
     private static final int[][] PATHS = {
@@ -48,10 +52,10 @@ public class Level2Park extends Level {
 
     private final List<LitterBot> bots = new ArrayList<>();
     private ParkGround ground;
-    private LitterBeast beast;
-    private boolean beastDefeated;
-    private int pollution, sorted;
+    private int sorted;
     private double hurtCooldown;
+    /** Once the Litter Beast is out, the LitterBots stop dropping litter (its HP is the trash left). */
+    private boolean beastOut;
 
     @Override public String getName() { return "Level 2: Public Park"; }
 
@@ -59,8 +63,12 @@ public class Level2Park extends Level {
     protected void buildTerrain() {
         spawnCol = 16;
         spawnRow = 6;
+        // a restart reloads this same object: start over without the old bots
+        bots.clear();
+        beastOut = false;
+        sorted = 0;
+        hurtCooldown = 0;
     }
-
     @Override
     protected void buildProps() {
         List<Rectangle> paths = new ArrayList<>();
@@ -73,6 +81,9 @@ public class Level2Park extends Level {
         props.add(new Pond(new Rectangle(281, 74, 158, 84), new Rectangle(296, 150, 143, 66)));
         props.add(new Blocker(284, 77, 152, 78));
         props.add(new Blocker(299, 153, 137, 60));
+        // the pond art (rim, reeds, shallow water) is wider than its blockers
+        noLitterZones.add(new Rectangle2D.Double(281 - 8, 74 - 8, 158 + 16, 84 + 16));
+        noLitterZones.add(new Rectangle2D.Double(296 - 8, 150 - 8, 143 + 16, 66 + 16));
 
         for (int[] t : GREEN_TREES) props.add(new GreenTree(t[0], t[1], t[2]));
         for (int[] t : CHERRY_TREES) props.add(new CherryTree(t[0], t[1], t[2]));
@@ -104,6 +115,7 @@ public class Level2Park extends Level {
         if (!ground.onPath(gx + 4, gy + 4) && rng.nextInt(100) < 55) return false;
         if (Math.hypot(gx - getSpawnX(), gy - getSpawnY()) < 30 || !isFree(new Rectangle2D.Double(gx - 2, gy - 2, 12, 12)))
             return false;
+        if (!isLitterSpotOk(gx, gy)) return false;
         garbage.add(new Garbage(randomType(), rng.nextInt(2), gx, gy));
         return true;
     }
@@ -120,30 +132,27 @@ public class Level2Park extends Level {
         hurtCooldown = Math.max(0, hurtCooldown - dt);
         for (LitterBot b : bots) {
             b.update(dt);
-            if (b.readyToDrop()) garbage.add(new Garbage(randomType(), rng.nextInt(2), b.dropX(), b.dropY()));
+            if (b.readyToDrop() && !beastOut && addRandomLitterNear(b.dropX(), b.dropY(), 1, 14) == 0) {
+                double[] spot = litterSpotNear(b.dropX(), b.dropY(), 48);
+                garbage.add(new Garbage(randomType(), rng.nextInt(2), spot[0], spot[1]));
+            }
             if (b.isTouching(player)) hurt(player, "A LitterBot bumped you! -1 HP");
         }
-
-        if (beast == null && cleanliness() >= BEAST_SPAWN_CLEANLINESS) {
-            beast = new LitterBeast(446, 218);
-            addNpc(beast);
-            for (LitterBot b : bots) b.activate();
-            announce("The Litter Beast appeared! The LitterBots sped up!");
-        }
-        if (beast == null || beastDefeated) return;
-
-        beast.update(dt, this);
-        if (beast.readyToSpawnLitter()) {
-            for (int i = 0; i < 50 && !placeLitter(); i++);
-            pollution++;
-        }
-        if (beast.isTouching(player)) hurt(player, "The Litter Beast hit you! -1 HP");
-        if (cleanliness() >= TARGET_CLEANLINESS) {
-            beastDefeated = true;
-            beast.defeat();
-            player.addMoney(BEAST_REWARD);
-        }
     }
+
+    /**
+     * The Litter Beast bursts out of the leaves in the south-east corner; the LitterBots speed up
+     * but stop dropping litter, so the beast's HP only grows from its own garbage spews.
+     */
+    @Override
+    public TrashBoss createTrashBoss(Player player) {
+        beastOut = true;
+        for (LitterBot b : bots) b.activate();
+        return new LitterBeast(446, 218);
+    }
+
+    @Override public boolean hasTrashBoss() { return true; }
+    @Override public int clearBonus() { return BEAST_REWARD; }
 
     private void hurt(Player player, String text) {
         if (hurtCooldown > 0) return;
@@ -161,13 +170,13 @@ public class Level2Park extends Level {
 
     @Override
     public int cleanliness() {
-        int value = BASE_CLEANLINESS + (int) Math.round((100 - BASE_CLEANLINESS) * (double) sorted / GARBAGE_COUNT) - pollution;
+        int value = BASE_CLEANLINESS + (int) Math.round((100 - BASE_CLEANLINESS) * (double) sorted / GARBAGE_COUNT);
         return Math.max(0, Math.min(100, value));
     }
 
     @Override public boolean hasTrashMonster() { return false; }
-    @Override public int timeLimit() { return TIME_LIMIT; }
-    @Override public boolean isCleared(Player player) { return beastDefeated; }
-    @Override public String introMessage() { return "Reach 80% park health in 3 minutes! Avoid the LitterBots."; }
-    @Override public String clearMessage() { return "Litter Beast defeated! +\u20B1150  Park cleaned! +\u20B1100"; }
+    @Override public String introMessage() {
+        return "Clean the park! Sort litter into the matching bins and avoid the LitterBots. Something rustles in the leaves...";
+    }
+    @Override public String clearMessage() { return "Litter Beast defeated! Park cleaned!"; }
 }

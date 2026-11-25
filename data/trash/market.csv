@@ -1,4 +1,4 @@
-﻿# Eco Quest | Level 3 (Market) trash base
+# Eco Quest | Level 3 (Market) trash base
 # Format: id,name,type,weight,tip
 #   id     -> sprite key. Optional art: assets/sprites/<id>.png (any size, drawn at ~14x14 px)
 #   type   -> BIO | REC | TRASH | HAZ

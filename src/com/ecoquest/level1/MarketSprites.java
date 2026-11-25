@@ -1,4 +1,4 @@
-﻿package com.ecoquest.level3;
+package com.ecoquest.level1;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -11,11 +11,11 @@ import java.util.Map;
 import javax.imageio.ImageIO;
 
 /**
- * Pixel art drawn in code, so the game runs with zero image files.
+ * Town Market pixel art drawn in code (trash icons, shoppers, hand carts).
  * Want real art? Drop assets/sprites/&lt;id&gt;.png and it replaces the drawn icon automatically.
  */
-public final class Sprites {
-    private Sprites() {
+public final class MarketSprites {
+    private MarketSprites() {
     }
 
     public static final int ICON = 16; // 14x14 art + 1px outline margin
@@ -24,15 +24,17 @@ public final class Sprites {
 
     // ------------------------------------------------------------------ trash icons
 
-    public static BufferedImage trashIcon(TrashDef d) {
+    public static BufferedImage trashIcon(MarketTrash.Def d) {
         return CACHE.computeIfAbsent(d.id(), k -> {
             BufferedImage custom = loadCustom(k);
-            return custom != null ? custom : outline(drawIcon(d));
+            if (custom != null) return custom;
+            BufferedImage art = MarketIconArt.get(k);
+            return outline(art != null ? art : drawIcon(d));
         });
     }
 
     private static BufferedImage loadCustom(String id) {
-        File f = Res.find("assets/sprites/" + id + ".png").toFile();
+        File f = MarketTrash.find("assets/sprites/" + id + ".png");
         if (!f.exists()) return null;
         try {
             BufferedImage src = ImageIO.read(f);
@@ -78,7 +80,7 @@ public final class Sprites {
         g.fillOval(x + 1, y + 1, w, h);
     }
 
-    private static BufferedImage drawIcon(TrashDef d) {
+    private static BufferedImage drawIcon(MarketTrash.Def d) {
         BufferedImage im = new BufferedImage(ICON, ICON, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = im.createGraphics();
         switch (d.id()) {
@@ -256,8 +258,8 @@ public final class Sprites {
                 px(g, 0xf7d24a, 7, 1, 1, 2);
             }
             default -> { // any new item without a drawing: a blob in its bin colour
-                oval(g, d.type().color.getRGB() & 0xffffff, 1, 2, 12, 10);
-                oval(g, Tiles.shade(d.type().color, 1.35).getRGB() & 0xffffff, 3, 4, 5, 3);
+                oval(g, d.type().getColor(), 1, 2, 12, 10);
+                oval(g, MarketTiles.shade(new Color(d.type().getColor()), 1.35).getRGB() & 0xffffff, 3, 4, 5, 3);
             }
         }
         g.dispose();
@@ -295,7 +297,7 @@ public final class Sprites {
         Graphics2D g = im.createGraphics();
         g.translate(1, 1);
         Color hair = HAIR[Math.floorMod(tunic.getRGB() + hat.getRGB(), HAIR.length)];
-        Color pants = Tiles.shade(tunic, 0.55), boots = new Color(0x4a2f1c);
+        Color pants = MarketTiles.shade(tunic, 0.55), boots = new Color(0x4a2f1c);
         int bob = (f == 1 || f == 3) ? 1 : 0;
         int l1 = f == 1 ? 2 : 0, l2 = f == 3 ? 2 : 0;
         // legs
@@ -305,18 +307,18 @@ public final class Sprites {
         rect(g, boots, 9, 22 - l2, 3, 2);
         // torso + arms
         rect(g, tunic, 3, 11 - bob, 10, 9);
-        rect(g, Tiles.shade(tunic, 1.18), 3, 11 - bob, 10, 2);
-        rect(g, Tiles.shade(tunic, 0.78), 9, 13 - bob, 4, 7);
+        rect(g, MarketTiles.shade(tunic, 1.18), 3, 11 - bob, 10, 2);
+        rect(g, MarketTiles.shade(tunic, 0.78), 9, 13 - bob, 4, 7);
         rect(g, new Color(0x5a3a22), 3, 16 - bob, 10, 2); // belt
         rect(g, new Color(0xf2c230), 7, 16 - bob, 2, 2);
         if (style == 2) rect(g, Color.WHITE, 4, 12 - bob, 8, 8); // apron
-        rect(g, Tiles.shade(tunic, 0.9), 1, 12 - bob, 2, 5);
-        rect(g, Tiles.shade(tunic, 0.9), 13, 12 - bob, 2, 5);
+        rect(g, MarketTiles.shade(tunic, 0.9), 1, 12 - bob, 2, 5);
+        rect(g, MarketTiles.shade(tunic, 0.9), 13, 12 - bob, 2, 5);
         rect(g, skin, 1, 17 - bob, 2, 2);
         rect(g, skin, 13, 17 - bob, 2, 2);
         // head
         rect(g, skin, 4, 6 - bob, 8, 7);
-        rect(g, Tiles.shade(skin, 0.88), 4, 12 - bob, 8, 1);
+        rect(g, MarketTiles.shade(skin, 0.88), 4, 12 - bob, 8, 1);
         if (facing == 1) {
             rect(g, hair, 4, 6 - bob, 8, 7);
         } else {
@@ -328,18 +330,18 @@ public final class Sprites {
                 rect(g, eye, 9, 9 - bob, 2, 2);
                 rect(g, new Color(0xe89080), 4, 11 - bob, 1, 1);
                 rect(g, new Color(0xe89080), 11, 11 - bob, 1, 1);
-                rect(g, Tiles.shade(skin, 0.7), 7, 12 - bob, 2, 1);
+                rect(g, MarketTiles.shade(skin, 0.7), 7, 12 - bob, 2, 1);
             } else {
                 int ex = facing == 2 ? 5 : 9;
                 rect(g, eye, ex, 9 - bob, 2, 2);
-                rect(g, Tiles.shade(skin, 0.8), facing == 2 ? 4 : 11, 10 - bob, 1, 1);
+                rect(g, MarketTiles.shade(skin, 0.8), facing == 2 ? 4 : 11, 10 - bob, 1, 1);
             }
         }
         // headwear
         switch (style) {
             case 1 -> {
                 rect(g, hair, 3, 4 - bob, 10, 4);
-                rect(g, Tiles.shade(hair, 1.3), 5, 4 - bob, 4, 1);
+                rect(g, MarketTiles.shade(hair, 1.3), 5, 4 - bob, 4, 1);
                 rect(g, hat, 3, 7 - bob, 10, 1); // headband
             }
             case 2 -> {
@@ -360,96 +362,14 @@ public final class Sprites {
                 int tipX = facing == 3 ? 1 : facing == 2 ? 12 : facing == 0 ? 11 : 2;
                 rect(g, hat, tipX, 1 - bob, 3, 3);
                 rect(g, hat, tipX + (tipX > 8 ? 1 : -1), 3 - bob, 2, 2);
-                rect(g, Tiles.shade(hat, 1.3), 5, 1 - bob, 4, 1);
-                rect(g, Tiles.shade(hat, 0.7), 3, 6 - bob, 10, 1);
+                rect(g, MarketTiles.shade(hat, 1.3), 5, 1 - bob, 4, 1);
+                rect(g, MarketTiles.shade(hat, 0.7), 3, 6 - bob, 10, 1);
             }
         }
         g.dispose();
-        Tiles.outline(im, 0x2a1a18);
+        MarketTiles.outline(im, 0x2a1a18);
         return im;
     }
-
-    // ------------------------------------------------------------------ bins
-
-    private static final Map<String, BufferedImage> BINS = new HashMap<>();
-
-    public static void bin(Graphics2D g, Rectangle r, WasteType t, boolean open, int flash) {
-        g.setColor(new Color(0, 0, 0, 80));
-        g.fillOval(r.x - 3, r.y + r.height - 6, r.width + 8, 10);
-        String key = t + "|" + r.width + "|" + r.height + "|" + open + "|" + flash;
-        BufferedImage im = BINS.computeIfAbsent(key, k -> binImage(r.width, r.height, t, open, flash));
-        g.drawImage(im, r.x - 4, r.y - 10, null);
-    }
-
-    private static BufferedImage binImage(int w, int h, WasteType t, boolean open, int flash) {
-        BufferedImage im = new BufferedImage(w + 8, h + 14, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = im.createGraphics();
-        g.translate(4, 10);
-        Color body = t.color;
-        if (t == WasteType.BIO) body = new Color(0x3aa653);
-        if (t == WasteType.REC) body = new Color(0x3f8fe0);
-        if (t == WasteType.TRASH) body = new Color(0x4b4d58);
-        if (t == WasteType.HAZ) body = new Color(0xd93a3a);
-        if (flash > 0) body = Tiles.shade(body, 1.45);
-        else if (flash < 0) body = new Color(0xff6a6a);
-        // body (slightly tapered)
-        java.awt.Polygon p = new java.awt.Polygon(new int[]{0, w, w - 3, 3}, new int[]{8, 8, h, h}, 4);
-        g.setColor(Tiles.shade(body, 0.72));
-        g.fillPolygon(p);
-        g.setColor(body);
-        g.fillPolygon(new java.awt.Polygon(new int[]{0, w - 7, w - 9, 3}, new int[]{8, 8, h, h}, 4));
-        g.setColor(Tiles.shade(body, 1.3));
-        g.fillRect(2, 11, 2, h - 17);
-        g.setColor(new Color(0, 0, 0, 40));
-        for (int x = 9; x < w - 6; x += 7) g.fillRect(x, 12, 1, h - 20);
-        // wheels
-        rect(g, new Color(0x222228), 3, h - 1, 5, 3);
-        rect(g, new Color(0x222228), w - 8, h - 1, 5, 3);
-        // opening
-        rect(g, new Color(0x15151a), 1, 8, w - 2, 3);
-        // lid
-        int ly = open ? -6 : 1;
-        rect(g, Tiles.shade(body, 0.55), -2, ly + 6, w + 4, 4);
-        rect(g, Tiles.shade(body, 0.95), -2, ly + 1, w + 4, 6);
-        rect(g, Tiles.shade(body, 1.3), -2, ly + 1, w + 4, 1);
-        rect(g, Tiles.shade(body, 1.35), w / 2 - 5, ly - 2, 10, 3);
-        // symbol plate
-        int cx = w / 2 - 1, cy = (int) (h * 0.42);
-        g.setColor(Color.WHITE);
-        switch (t) {
-            case BIO -> {
-                g.fillOval(cx - 5, cy - 4, 10, 8);
-                g.setColor(body);
-                g.drawLine(cx - 4, cy + 3, cx + 3, cy - 3);
-            }
-            case REC -> {
-                g.setStroke(new java.awt.BasicStroke(2f));
-                g.drawPolygon(new int[]{cx, cx - 6, cx + 6}, new int[]{cy - 5, cy + 5, cy + 5}, 3);
-                g.setColor(body);
-                g.fillRect(cx - 1, cy + 3, 3, 3);
-                g.fillRect(cx - 5, cy - 1, 2, 2);
-                g.fillRect(cx + 4, cy - 1, 2, 2);
-            }
-            case TRASH -> {
-                g.fillRect(cx - 4, cy - 3, 9, 9);
-                g.fillRect(cx - 5, cy - 5, 11, 2);
-                g.setColor(Tiles.shade(body, 0.8));
-                g.fillRect(cx - 2, cy - 1, 1, 5);
-                g.fillRect(cx + 1, cy - 1, 1, 5);
-            }
-            case HAZ -> {
-                g.setColor(new Color(0xf7d23a));
-                g.fillPolygon(new int[]{cx, cx - 7, cx + 7}, new int[]{cy - 6, cy + 6, cy + 6}, 3);
-                g.setColor(new Color(0x2a1a18));
-                g.fillRect(cx - 1, cy - 2, 2, 5);
-                g.fillRect(cx - 1, cy + 4, 2, 1);
-            }
-        }
-        g.dispose();
-        Tiles.outline(im, open ? 0xffffff : 0x2a1a18);
-        return im;
-    }
-
 
     // ------------------------------------------------------------------ hand cart
 
@@ -479,7 +399,7 @@ public final class Sprites {
         for (int i = 0; i < 5; i++) {
             rect(g, new Color(0x2a1a18), 6 + i * 6, 5 + (i % 2), 7, 8);
             rect(g, new Color(cols[i]), 7 + i * 6, 6 + (i % 2), 5, 6);
-            rect(g, Tiles.shade(new Color(cols[i]), 1.35), 7 + i * 6, 6 + (i % 2), 3, 2);
+            rect(g, MarketTiles.shade(new Color(cols[i]), 1.35), 7 + i * 6, 6 + (i % 2), 3, 2);
         }
         // wheels
         for (int wx : new int[]{9, 28}) {
@@ -488,94 +408,7 @@ public final class Sprites {
             rect(g, new Color(0x9a9aa6), wx + 3, 20, 3, 3);
         }
         g.dispose();
-        Tiles.outline(im, Tiles.OUT);
-        return im;
-    }
-
-    // ------------------------------------------------------------------ boss
-
-    private static final Map<String, BufferedImage> KING = new HashMap<>();
-
-    /** The Waste King: a crowned mound of garbage that shrinks as it is cleaned up. */
-    public static void wasteKing(Graphics2D g, int cx, int baseY, double size, double shake, double t) {
-        boolean angry = shake > 0.05;
-        BufferedImage im = KING.computeIfAbsent(String.valueOf(angry), k -> kingImage(angry));
-        int w = (int) (im.getWidth() * size), h = (int) (im.getHeight() * size);
-        int sx = (int) (Math.sin(t * 60) * shake * 3);
-        int bob = (int) Math.round(Math.sin(t * 2.2) * 1.5);
-        g.setColor(new Color(0, 0, 0, 80));
-        g.fillOval(cx - w / 2 - 2, baseY - 10, w + 4, 18);
-        g.drawImage(im, cx - w / 2 + sx, baseY - h + bob, w, h, null);
-    }
-
-    private static BufferedImage kingImage(boolean angry) {
-        BufferedImage im = new BufferedImage(90, 76, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = im.createGraphics();
-        // mound
-        g.setColor(new Color(0x3d4a28));
-        g.fillOval(2, 26, 86, 48);
-        g.setColor(new Color(0x56693a));
-        g.fillOval(6, 24, 78, 42);
-        g.setColor(new Color(0x6f8548));
-        g.fillOval(14, 24, 52, 24);
-        // trash bits poking out
-        int[] cols = {0xe34b4b, 0x3b8fd9, 0xf2d33b, 0xf4f4f4, 0xc98c4a, 0x7cc46a, 0xb9864f, 0x9db8c9, 0x8e44ad};
-        for (int i = 0; i < 34; i++) {
-            double a = Math.floorMod(Tiles.hash(i, 5), 628) / 100.0;
-            double d = 0.55 + Math.floorMod(Tiles.hash(i, 8), 45) / 100.0;
-            int x = 45 + (int) (Math.cos(a) * 40 * d), y = 52 + (int) (Math.sin(a) * 20 * d);
-            if (y < 30) continue;
-            int c = cols[i % cols.length];
-            int bw = 4 + Math.floorMod(Tiles.hash(i, 2), 5), bh = 3 + Math.floorMod(Tiles.hash(i, 4), 3);
-            g.setColor(new Color(0x2a1a18));
-            g.fillRect(x - 1, y - 1, bw + 2, bh + 2);
-            g.setColor(new Color(c));
-            g.fillRect(x, y, bw, bh);
-            g.setColor(Tiles.shade(new Color(c), 1.3));
-            g.fillRect(x, y, bw, 1);
-        }
-        // eyes
-        g.setColor(new Color(0x2a1a18));
-        g.fillOval(20, 30, 21, 17);
-        g.fillOval(49, 30, 21, 17);
-        g.setColor(new Color(0xfff4c0));
-        g.fillOval(22, 32, 17, 13);
-        g.fillOval(51, 32, 17, 13);
-        g.setColor(angry ? new Color(0xe03030) : new Color(0x222222));
-        g.fillRect(28, 35, 6, 7);
-        g.fillRect(56, 35, 6, 7);
-        g.setColor(Color.WHITE);
-        g.fillRect(29, 36, 2, 2);
-        g.fillRect(57, 36, 2, 2);
-        // brows
-        g.setColor(new Color(0x2a1a18));
-        for (int i = 0; i < 4; i++) {
-            g.fillRect(21 + i * 5, 28 + (angry ? 3 - i : i / 2), 6, 3);
-            g.fillRect(69 - i * 5 - 5, 28 + (angry ? 3 - i : i / 2), 6, 3);
-        }
-        // mouth
-        g.setColor(new Color(0x2a1a18));
-        g.fillRoundRect(28, 52, 34, angry ? 15 : 11, 8, 8);
-        g.setColor(new Color(0x8a1f2c));
-        g.fillRect(31, 58, 28, angry ? 7 : 3);
-        g.setColor(Color.WHITE);
-        for (int i = 0; i < 5; i++) g.fillRect(30 + i * 6, 53, 4, 4);
-        // crown
-        g.setColor(new Color(0x2a1a18));
-        g.fillRect(25, 11, 40, 14);
-        for (int i = 0; i < 4; i++) g.fillPolygon(new int[]{25 + i * 12, 31 + i * 12, 37 + i * 12}, new int[]{12, 1, 12}, 3);
-        g.setColor(new Color(0xf2c230));
-        g.fillRect(27, 13, 36, 10);
-        for (int i = 0; i < 4; i++) g.fillPolygon(new int[]{27 + i * 12, 31 + i * 12, 35 + i * 12}, new int[]{13, 4, 13}, 3);
-        g.setColor(new Color(0xfff0a0));
-        g.fillRect(27, 13, 36, 2);
-        g.setColor(new Color(0xd63a3a));
-        g.fillRect(43, 16, 5, 5);
-        g.setColor(new Color(0x3b8fd9));
-        g.fillRect(32, 17, 4, 4);
-        g.fillRect(54, 17, 4, 4);
-        g.dispose();
+        MarketTiles.outline(im, MarketTiles.OUT);
         return im;
     }
 }
-

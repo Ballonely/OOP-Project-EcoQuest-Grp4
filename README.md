@@ -59,6 +59,22 @@ You can run the game directly with the provided batch file:
 run.bat
 ```
 
+**Developer account:** log in as `developer` (password shared within the team). It is built in,
+works on every machine without registering, starts with ₱99,999 and is never saved. In any level
+it shows a **Developer Tools** key guide (F1 hides/shows it):
+
+| Key | Action |
+|---|---|
+| F1 | Show / hide the guide |
+| F2 | Refill health |
+| F3 | Clear all litter on the map |
+| F9 | Summon the Trash Monster (Level 1) |
+| F10 | Remove 1 litter (Level 1 boss -1 HP) |
+
+**Developer shortcut – test the Level 1 boss:** `boss.bat` (or `run.bat --boss`) skips login and
+menus, signs in as the developer account and drops you straight into the Trash Monster fight
+with the street already 75% clean. **R** restarts the fight.
+
 Or from the command line:
 ```bash
 mkdir -p bin
@@ -102,7 +118,9 @@ com.ecoquest
  │   ├─ Enemy.java             Roaming "pollution cloud" hazard
  │   └─ Collectible.java       "Eco token" pickup (score + cleanliness)
  ├─ level1/
- │   └─ Level1Residential.java Residential streets, litter sorting, and the Trash Monster NPC at 80% city health
+ │   ├─ Level1Residential.java Residential streets, litter sorting; the Trash Monster boss rises at 75% cleanliness
+ │   ├─ TrashMonsterBoss.java  Boss whose HP = trash left; sorting trash hurts it, its garbage bag (every 10 s) heals it
+ │   └─ TrashMonsterArt.java   Procedural pixel-art sprite + 8 animations for the boss (no image file needed)
  └─ ui/
      ├─ MenuManager.java       Main menu screen (title, tagline, buttons,
      │                         top/bottom HUD strips) — matches reference art

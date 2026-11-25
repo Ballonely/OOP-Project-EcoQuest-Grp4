@@ -1,4 +1,4 @@
-﻿package com.ecoquest.level3;
+package com.ecoquest.level1;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -6,8 +6,8 @@ import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 
 /** Reusable pixel-art painters for map backgrounds: ground textures, roofs, trees, outlines and shadows. */
-final class Tiles {
-    private Tiles() {
+final class MarketTiles {
+    private MarketTiles() {
     }
 
     static int hash(int a, int b) {
@@ -189,7 +189,7 @@ final class Tiles {
     // ------------------------------------------------------------------ objects (drawn on transparent layers)
 
     static BufferedImage layer() {
-        return new BufferedImage(Level.W, Level.H, BufferedImage.TYPE_INT_ARGB);
+        return new BufferedImage(MarketArt.W, MarketArt.H, BufferedImage.TYPE_INT_ARGB);
     }
 
     /** Adds a 1px dark outline around everything painted on the layer. */
